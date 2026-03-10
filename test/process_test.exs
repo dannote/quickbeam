@@ -158,6 +158,136 @@ defmodule QuickBEAM.ProcessTest do
     end
   end
 
+  describe "Process.monitor" do
+    test "callback fires when monitored process exits normally", %{rt: rt} do
+      pid = spawn(fn -> Process.sleep(50) end)
+
+      QuickBEAM.eval(rt, """
+        globalThis.downFired = false;
+        globalThis.downReason = null;
+        Process.onMessage((msg) => {
+          if (msg.action === "monitor") {
+            Process.monitor(msg.pid, (reason) => {
+              globalThis.downFired = true;
+              globalThis.downReason = reason;
+            });
+          }
+        });
+      """)
+
+      QuickBEAM.send_message(rt, %{action: "monitor", pid: pid})
+      Process.sleep(200)
+
+      assert {:ok, true} = QuickBEAM.eval(rt, "downFired")
+      assert {:ok, "normal"} = QuickBEAM.eval(rt, "downReason")
+    end
+
+    test "callback fires with exit reason", %{rt: rt} do
+      pid =
+        spawn(fn ->
+          Process.sleep(50)
+          exit(:kaboom)
+        end)
+
+      QuickBEAM.eval(rt, """
+        globalThis.downReason = null;
+        Process.onMessage((msg) => {
+          Process.monitor(msg, (reason) => {
+            globalThis.downReason = reason;
+          });
+        });
+      """)
+
+      QuickBEAM.send_message(rt, pid)
+      Process.sleep(200)
+
+      assert {:ok, "kaboom"} = QuickBEAM.eval(rt, "downReason")
+    end
+
+    test "monitor returns a reference", %{rt: rt} do
+      pid = spawn(fn -> Process.sleep(5000) end)
+
+      QuickBEAM.eval(rt, """
+        globalThis.monRef = null;
+        Process.onMessage((pid) => {
+          globalThis.monRef = Process.monitor(pid, () => {});
+        });
+      """)
+
+      QuickBEAM.send_message(rt, pid)
+      Process.sleep(50)
+
+      {:ok, ref} = QuickBEAM.eval(rt, "monRef")
+      assert is_reference(ref)
+      Process.exit(pid, :kill)
+    end
+
+    test "demonitor cancels the callback", %{rt: rt} do
+      pid = spawn(fn -> Process.sleep(100) end)
+
+      QuickBEAM.eval(rt, """
+        globalThis.downFired = false;
+        Process.onMessage((pid) => {
+          const ref = Process.monitor(pid, () => {
+            globalThis.downFired = true;
+          });
+          Process.demonitor(ref);
+        });
+      """)
+
+      QuickBEAM.send_message(rt, pid)
+      Process.sleep(250)
+
+      assert {:ok, false} = QuickBEAM.eval(rt, "downFired")
+    end
+
+    test "multiple monitors on different processes", %{rt: rt} do
+      pid1 = spawn(fn -> Process.sleep(50) end)
+      pid2 = spawn(fn -> Process.sleep(100) end)
+
+      QuickBEAM.eval(rt, """
+        globalThis.downs = [];
+        Process.onMessage((msg) => {
+          Process.monitor(msg.pid, (reason) => {
+            globalThis.downs.push(msg.name);
+          });
+        });
+      """)
+
+      QuickBEAM.send_message(rt, %{pid: pid1, name: "first"})
+      QuickBEAM.send_message(rt, %{pid: pid2, name: "second"})
+      Process.sleep(250)
+
+      {:ok, downs} = QuickBEAM.eval(rt, "downs")
+      assert "first" in downs
+      assert "second" in downs
+    end
+
+    test "Process.onMessage still works alongside monitors", %{rt: rt} do
+      pid = spawn(fn -> Process.sleep(50) end)
+
+      QuickBEAM.eval(rt, """
+        globalThis.regularMessages = [];
+        globalThis.downFired = false;
+        Process.onMessage((msg) => {
+          if (typeof msg === "string") {
+            globalThis.regularMessages.push(msg);
+          } else {
+            Process.monitor(msg, () => { globalThis.downFired = true; });
+          }
+        });
+      """)
+
+      QuickBEAM.send_message(rt, "hello")
+      QuickBEAM.send_message(rt, pid)
+      QuickBEAM.send_message(rt, "world")
+      Process.sleep(200)
+
+      assert {:ok, ["hello", "world"]} = QuickBEAM.eval(rt, "regularMessages")
+      assert {:ok, true} = QuickBEAM.eval(rt, "downFired")
+    end
+  end
+
   describe "PID round-trip" do
     test "PID survives Elixir→JS→Elixir conversion", %{rt: rt} do
       original_pid = self()

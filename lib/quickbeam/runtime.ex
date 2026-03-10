@@ -3,9 +3,9 @@ defmodule QuickBEAM.Runtime do
   use GenServer
 
   @enforce_keys [:resource]
-  defstruct [:resource, handlers: %{}]
+  defstruct [:resource, handlers: %{}, monitors: %{}]
 
-  @type t :: %__MODULE__{resource: reference(), handlers: map()}
+  @type t :: %__MODULE__{resource: reference(), handlers: map(), monitors: map()}
 
   def child_spec(opts) do
     id = Keyword.get(opts, :id, Keyword.get(opts, :name, __MODULE__))
@@ -100,6 +100,7 @@ defmodule QuickBEAM.Runtime do
     compression
     buffer
     web-apis
+    process
   ]
 
   @builtin_js (for name <- @js_load_order do
@@ -282,6 +283,20 @@ defmodule QuickBEAM.Runtime do
   end
 
   @impl true
+  def handle_info({:beam_call, call_id, "__process_monitor", [pid, callback_id]}, state) do
+    ref = Process.monitor(pid)
+    monitors = Map.put(state.monitors, ref, callback_id)
+    QuickBEAM.Native.resolve_call_term(state.resource, call_id, ref)
+    {:noreply, %{state | monitors: monitors}}
+  end
+
+  def handle_info({:beam_call, call_id, "__process_demonitor", [ref]}, state) do
+    {callback_id, monitors} = Map.pop(state.monitors, ref)
+    if ref, do: Process.demonitor(ref, [:flush])
+    QuickBEAM.Native.resolve_call_term(state.resource, call_id, callback_id)
+    {:noreply, %{state | monitors: monitors}}
+  end
+
   def handle_info({:beam_call, call_id, handler_name, args}, state) do
     resource = state.resource
     handlers = state.handlers
@@ -322,6 +337,17 @@ defmodule QuickBEAM.Runtime do
     end)
 
     {:noreply, state}
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, reason}, %{monitors: monitors} = state) do
+    case Map.pop(monitors, ref) do
+      {nil, _} ->
+        {:noreply, state}
+
+      {callback_id, monitors} ->
+        QuickBEAM.Native.send_message(state.resource, ["__qb_down", callback_id, reason])
+        {:noreply, %{state | monitors: monitors}}
+    end
   end
 
   def handle_info(msg, state) do

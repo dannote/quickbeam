@@ -53,6 +53,12 @@ interface BeamProcess {
   /** Register a callback for incoming BEAM messages. */
   onMessage(callback: (message: unknown) => void): void;
 
+  /** Monitor a BEAM process. Callback fires with exit reason when it dies. */
+  monitor(pid: BeamPid, callback: (reason: unknown) => void): BeamRef;
+
+  /** Cancel a monitor previously set with `Process.monitor`. */
+  demonitor(ref: BeamRef): void;
+
   /** Alias for beam.send. */
   send(pid: BeamPid, message: unknown): void;
 
