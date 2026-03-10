@@ -39,6 +39,13 @@ defmodule QuickBEAM do
     * `:script` — path to a JS file evaluated on startup
     * `:memory_limit` — maximum JS heap in bytes (default: 256 MB)
     * `:max_stack_size` — maximum JS call stack in bytes (default: 1 MB)
+
+  ## DOM
+
+  Each runtime has a live DOM tree backed by lexbor. JS gets `document`,
+  `querySelector`, `createElement`, etc. Elixir can read the DOM directly
+  via `dom_find/2`, `dom_find_all/2`, `dom_text/2`, `dom_attr/3`, and
+  `dom_html/1` — returning Floki-compatible `{tag, attrs, children}` tuples.
   """
 
   @type runtime :: GenServer.server()

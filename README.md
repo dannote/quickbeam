@@ -49,6 +49,12 @@ beam.send(somePid, {type: "update", data: result});
 Process.onMessage((msg) => {
   console.log("got:", msg);
 });
+
+// Monitor BEAM processes
+const ref = Process.monitor(pid, (reason) => {
+  console.log("process died:", reason);
+});
+Process.demonitor(ref);
 ```
 
 ## Supervision
@@ -75,13 +81,70 @@ Supervisor.start_link(children, strategy: :one_for_one)
 The `:script` option loads a JS file at startup. If the runtime crashes,
 the supervisor restarts it with a fresh context and re-evaluates the script.
 
+## Resource limits
+
+```elixir
+{:ok, rt} = QuickBEAM.start(
+  memory_limit: 10 * 1024 * 1024,  # 10 MB heap
+  max_stack_size: 512 * 1024        # 512 KB call stack
+)
+```
+
+## Introspection
+
+```elixir
+# List user-defined globals (excludes builtins)
+{:ok, ["myVar", "myFunc"]} = QuickBEAM.globals(rt, user_only: true)
+
+# Get any global's value
+{:ok, 42} = QuickBEAM.get_global(rt, "myVar")
+
+# Runtime diagnostics
+QuickBEAM.info(rt)
+# %{handlers: ["db.query"], memory: %{...}, global_count: 87}
+```
+
+## DOM
+
+Every runtime has a live DOM tree backed by [lexbor](https://github.com/lexbor/lexbor) (the C library
+behind PHP 8.4's DOM extension and Elixir's `fast_html`). JS gets a full `document` global:
+
+```javascript
+document.body.innerHTML = '<ul><li class="item">One</li><li class="item">Two</li></ul>';
+const items = document.querySelectorAll("li.item");
+items[0].textContent; // "One"
+```
+
+Elixir can read the DOM directly — no JS execution, no re-parsing:
+
+```elixir
+{:ok, rt} = QuickBEAM.start()
+QuickBEAM.eval(rt, ~s[document.body.innerHTML = '<h1 class="title">Hello</h1>'])
+
+# Returns Floki-compatible {tag, attrs, children} tuples
+{:ok, {"h1", [{"class", "title"}], ["Hello"]}} = QuickBEAM.dom_find(rt, "h1")
+
+# Batch queries
+{:ok, items} = QuickBEAM.dom_find_all(rt, "li")
+
+# Extract text and attributes
+{:ok, "Hello"} = QuickBEAM.dom_text(rt, "h1")
+{:ok, "/about"} = QuickBEAM.dom_attr(rt, "a", "href")
+
+# Serialize back to HTML
+{:ok, html} = QuickBEAM.dom_html(rt)
+```
+
 ## Web APIs
 
 Standard browser APIs backed by BEAM primitives, not JS polyfills:
 
 | JS API | BEAM backend |
 |---|---|
+| `fetch` | `:httpc` |
+| `document`, `querySelector` | lexbor (native C DOM) |
 | `URL`, `URLSearchParams` | `:uri_string` |
+| `Buffer` | `Base`, `:unicode` |
 | `crypto.subtle` | `:crypto` |
 | `compression.compress/decompress` | `:zlib` |
 | `TextEncoder`, `TextDecoder` | Native Zig (UTF-8) |
