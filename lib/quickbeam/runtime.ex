@@ -49,12 +49,28 @@ defmodule QuickBEAM.Runtime do
 
   @builtin_handlers %{
     "__url_parse" => &QuickBEAM.URL.parse/1,
-    "__url_recompose" => &QuickBEAM.URL.recompose/1
+    "__url_recompose" => &QuickBEAM.URL.recompose/1,
+    "__crypto_digest" => &QuickBEAM.SubtleCrypto.digest/1,
+    "__crypto_generate_key" => &QuickBEAM.SubtleCrypto.generate_key/1,
+    "__crypto_sign" => &QuickBEAM.SubtleCrypto.sign/1,
+    "__crypto_verify" => &QuickBEAM.SubtleCrypto.verify/1,
+    "__crypto_encrypt" => &QuickBEAM.SubtleCrypto.encrypt/1,
+    "__crypto_decrypt" => &QuickBEAM.SubtleCrypto.decrypt/1,
+    "__crypto_derive_bits" => &QuickBEAM.SubtleCrypto.derive_bits/1,
+    "__compress" => &QuickBEAM.Compression.compress/1,
+    "__decompress" => &QuickBEAM.Compression.decompress/1
   }
 
-  @url_js_path Path.join([__DIR__, "../../priv/js/url.js"]) |> Path.expand()
+  @priv_js_dir Path.join([__DIR__, "../../priv/js"]) |> Path.expand()
+  @url_js_path Path.join(@priv_js_dir, "url.js")
+  @crypto_js_path Path.join(@priv_js_dir, "crypto-subtle.js")
   @external_resource @url_js_path
+  @external_resource @crypto_js_path
+  @compression_js_path Path.join(@priv_js_dir, "compression.js")
+  @external_resource @compression_js_path
   @url_js File.read!(@url_js_path)
+  @crypto_js File.read!(@crypto_js_path)
+  @compression_js File.read!(@compression_js_path)
 
   @impl true
   def init(opts) do
@@ -74,6 +90,8 @@ defmodule QuickBEAM.Runtime do
 
   defp install_builtins(state) do
     QuickBEAM.Native.eval(state.resource, @url_js)
+    QuickBEAM.Native.eval(state.resource, @crypto_js)
+    QuickBEAM.Native.eval(state.resource, @compression_js)
   end
 
   @impl true
