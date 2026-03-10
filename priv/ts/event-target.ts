@@ -11,12 +11,14 @@ export interface QBAddEventListenerOptions {
   signal?: QBAbortSignal;
 }
 
+export const SYM_STOP_IMMEDIATE = Symbol("stopImmediate");
+
 export class QBEvent {
   readonly type: string;
   readonly timeStamp: number;
   cancelBubble = false;
-  private _stopImmediatePropagationFlag = false;
-  private _defaultPrevented = false;
+  #stopImmediatePropagationFlag = false;
+  #defaultPrevented = false;
 
   constructor(type: string) {
     this.type = type;
@@ -24,11 +26,11 @@ export class QBEvent {
   }
 
   get defaultPrevented(): boolean {
-    return this._defaultPrevented;
+    return this.#defaultPrevented;
   }
 
   preventDefault(): void {
-    this._defaultPrevented = true;
+    this.#defaultPrevented = true;
   }
 
   stopPropagation(): void {
@@ -36,12 +38,12 @@ export class QBEvent {
   }
 
   stopImmediatePropagation(): void {
-    this._stopImmediatePropagationFlag = true;
+    this.#stopImmediatePropagationFlag = true;
     this.cancelBubble = true;
   }
 
-  get _stopImmediate(): boolean {
-    return this._stopImmediatePropagationFlag;
+  get [SYM_STOP_IMMEDIATE](): boolean {
+    return this.#stopImmediatePropagationFlag;
   }
 }
 
@@ -145,7 +147,7 @@ export class QBEventTarget {
     const snapshot = list.slice();
     for (const entry of snapshot) {
       if (entry._removed) continue;
-      if (event._stopImmediate) break;
+      if (event[SYM_STOP_IMMEDIATE]) break;
 
       if (typeof entry.callback === "function") {
         entry.callback(event);

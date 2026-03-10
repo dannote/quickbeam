@@ -5,7 +5,10 @@ import {
   QBCloseEvent,
   QBDOMException,
 } from "./event-target";
-import type { QBBlob } from "./blob";
+import { QBBlob, SYM_BYTES } from "./blob";
+
+const SYM_HANDLE_EVENT = Symbol("handleEvent");
+
 class QBWebSocket extends QBEventTarget {
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
@@ -75,10 +78,10 @@ class QBWebSocket extends QBEventTarget {
       payload = data;
     } else if (data instanceof ArrayBuffer) {
       payload = new Uint8Array(data);
-    } else if (data instanceof Blob) {
-      payload = data._bytes();
+    } else if (data instanceof QBBlob) {
+      payload = data[SYM_BYTES]();
     } else {
-      payload = String(data);
+      payload = JSON.stringify(data);
     }
 
     void beam.call("__ws_send", this.#id, payload);
@@ -98,8 +101,7 @@ class QBWebSocket extends QBEventTarget {
     void beam.call("__ws_close", this.#id, code ?? 1000, reason ?? "");
   }
 
-  /** @internal — called by the runtime on WebSocket events */
-  _handleEvent(
+  [SYM_HANDLE_EVENT](
     type: string,
     detail?: {
       data?: unknown;

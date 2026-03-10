@@ -8,12 +8,14 @@ export interface QBBlobPropertyBag {
   endings?: "transparent" | "native";
 }
 
+export const SYM_BYTES = Symbol("bytes");
+
 function normalizeQBBlobPart(part: QBBlobPart): Uint8Array {
   if (part instanceof Uint8Array) return part;
   if (part instanceof ArrayBuffer) return new Uint8Array(part);
   if (part instanceof DataView)
     return new Uint8Array(part.buffer, part.byteOffset, part.byteLength);
-  if (part instanceof QBBlob) return part._bytes();
+  if (part instanceof QBBlob) return part[SYM_BYTES]();
   if (typeof part === "string") return new TextEncoder().encode(part);
   return new Uint8Array(0);
 }
@@ -59,19 +61,19 @@ export class QBBlob {
   }
 
   async arrayBuffer(): Promise<ArrayBuffer> {
-    return this._bytes().buffer as ArrayBuffer;
+    return this[SYM_BYTES]().buffer as ArrayBuffer;
   }
 
   async text(): Promise<string> {
-    return new TextDecoder().decode(this._bytes());
+    return new TextDecoder().decode(this[SYM_BYTES]());
   }
 
   async bytes(): Promise<Uint8Array> {
-    return this._bytes();
+    return this[SYM_BYTES]();
   }
 
   slice(start?: number, end?: number, contentType?: string): QBBlob {
-    const bytes = this._bytes();
+    const bytes = this[SYM_BYTES]();
     const s = clampIndex(start ?? 0, bytes.length);
     const e = clampIndex(end ?? bytes.length, bytes.length);
     return new QBBlob([bytes.slice(s, Math.max(s, e))], {
@@ -80,7 +82,7 @@ export class QBBlob {
   }
 
   stream(): QBReadableStream<Uint8Array> {
-    const bytes = this._bytes();
+    const bytes = this[SYM_BYTES]();
     return new QBReadableStream({
       start(controller: QBReadableStreamController<Uint8Array>) {
         if (bytes.length > 0) controller.enqueue(bytes);
@@ -89,8 +91,7 @@ export class QBBlob {
     });
   }
 
-  /** @internal */
-  _bytes(): Uint8Array {
+  [SYM_BYTES](): Uint8Array {
     return concatBytes(this.#parts);
   }
 }

@@ -1,5 +1,4 @@
-import { QBBlob } from "./blob";
-import type { QBBlobPart } from "./blob";
+import { QBBlob, SYM_BYTES } from "./blob";
 import { QBReadableStream } from "./streams";
 import { QBHeaders } from "./headers";
 import type { QBHeadersInit } from "./headers";
@@ -29,7 +28,7 @@ async function bodyToBytes(body: QBBodyInit): Promise<{
     return { bytes: new Uint8Array(body), contentType: null };
   }
   if (body instanceof QBBlob) {
-    return { bytes: body._bytes(), contentType: body.type || null };
+    return { bytes: body[SYM_BYTES](), contentType: body.type || null };
   }
   if (body instanceof URLSearchParams) {
     return {
@@ -178,7 +177,7 @@ class QBResponse {
 
   async blob(): Promise<QBBlob> {
     const bytes = this.#consumeBody();
-    return new QBBlob([bytes as unknown as QBBlobPart], {
+    return new QBBlob([bytes], {
       type: this.headers.get("content-type") ?? "",
     });
   }

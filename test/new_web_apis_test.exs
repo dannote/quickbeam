@@ -7,14 +7,16 @@ defmodule QuickBEAM.NewWebAPIsTest do
   end
 
   defp await_condition(fun, retries \\ 50) do
-    if fun.() do
-      true
+    result = fun.()
+
+    if result do
+      result
     else
       if retries > 0 do
         Process.sleep(50)
         await_condition(fun, retries - 1)
       else
-        false
+        result
       end
     end
   end

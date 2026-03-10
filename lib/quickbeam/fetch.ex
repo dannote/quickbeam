@@ -1,6 +1,16 @@
 defmodule QuickBEAM.Fetch do
   @moduledoc false
 
+  @known_methods %{
+    "GET" => :get,
+    "POST" => :post,
+    "PUT" => :put,
+    "DELETE" => :delete,
+    "PATCH" => :patch,
+    "HEAD" => :head,
+    "OPTIONS" => :options
+  }
+
   def fetch([%{"url" => url, "method" => method, "headers" => headers} = opts]) do
     :ok = ensure_httpc_started()
 
@@ -8,24 +18,25 @@ defmodule QuickBEAM.Fetch do
     redirect = opts["redirect"] || "follow"
 
     uri = URI.parse(url)
-
-    url_charlist =
-      url
-      |> String.to_charlist()
+    url_charlist = String.to_charlist(url)
 
     req_headers =
-      headers
-      |> Enum.map(fn [k, v] -> {String.to_charlist(k), String.to_charlist(v)} end)
+      Enum.map(headers, fn [k, v] -> {String.to_charlist(k), String.to_charlist(v)} end)
 
     http_opts = [
       ssl: ssl_opts(uri.host),
       autoredirect: redirect == "follow",
-      relaxed: true
+      relaxed: true,
+      timeout: 30_000,
+      connect_timeout: 10_000
     ]
 
     request = build_request(url_charlist, req_headers, method, body)
 
-    case :httpc.request(atomize_method(method), request, http_opts, body_format: :binary) do
+    case :httpc.request(atomize_method(method), request, http_opts,
+           body_format: :binary,
+           profile: :quickbeam
+         ) do
       {:ok, {{_, status, reason}, resp_headers, resp_body}} ->
         %{
           "status" => status,
@@ -33,7 +44,7 @@ defmodule QuickBEAM.Fetch do
           "headers" => Enum.map(resp_headers, fn {k, v} -> [to_string(k), to_string(v)] end),
           "body" => {:bytes, IO.iodata_to_binary(resp_body)},
           "url" => url,
-          "redirected" => redirect == "follow" and status in 200..299
+          "redirected" => false
         }
 
       {:error, reason} ->
@@ -52,18 +63,13 @@ defmodule QuickBEAM.Fetch do
         {k, v} -> if :string.lowercase(k) == ~c"content-type", do: v
       end)
 
-    body_binary = to_binary(body)
-    {url, headers, content_type, body_binary}
+    {url, headers, content_type, to_binary(body)}
   end
 
-  defp atomize_method("GET"), do: :get
-  defp atomize_method("POST"), do: :post
-  defp atomize_method("PUT"), do: :put
-  defp atomize_method("DELETE"), do: :delete
-  defp atomize_method("PATCH"), do: :patch
-  defp atomize_method("HEAD"), do: :head
-  defp atomize_method("OPTIONS"), do: :options
-  defp atomize_method(other), do: String.downcase(other) |> String.to_atom()
+  defp atomize_method(method) do
+    Map.get(@known_methods, method) ||
+      raise ArgumentError, "unsupported HTTP method: #{method}"
+  end
 
   defp to_binary(data) when is_binary(data), do: data
   defp to_binary(data) when is_list(data), do: :erlang.list_to_binary(data)

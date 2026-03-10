@@ -1,30 +1,32 @@
 (() => {
   // priv/ts/event-target.ts
+  var SYM_STOP_IMMEDIATE = Symbol("stopImmediate");
+
   class QBEvent {
     type;
     timeStamp;
     cancelBubble = false;
-    _stopImmediatePropagationFlag = false;
-    _defaultPrevented = false;
+    #stopImmediatePropagationFlag = false;
+    #defaultPrevented = false;
     constructor(type) {
       this.type = type;
       this.timeStamp = performance.now();
     }
     get defaultPrevented() {
-      return this._defaultPrevented;
+      return this.#defaultPrevented;
     }
     preventDefault() {
-      this._defaultPrevented = true;
+      this.#defaultPrevented = true;
     }
     stopPropagation() {
       this.cancelBubble = true;
     }
     stopImmediatePropagation() {
-      this._stopImmediatePropagationFlag = true;
+      this.#stopImmediatePropagationFlag = true;
       this.cancelBubble = true;
     }
-    get _stopImmediate() {
-      return this._stopImmediatePropagationFlag;
+    get [SYM_STOP_IMMEDIATE]() {
+      return this.#stopImmediatePropagationFlag;
     }
   }
 
@@ -112,7 +114,7 @@
       for (const entry of snapshot) {
         if (entry._removed)
           continue;
-        if (event._stopImmediate)
+        if (event[SYM_STOP_IMMEDIATE])
           break;
         if (typeof entry.callback === "function") {
           entry.callback(event);
@@ -143,6 +145,8 @@
   globalThis.DOMException = QBDOMException;
 
   // priv/ts/abort.ts
+  var SYM_ABORT = Symbol("abort");
+
   class QBAbortSignal extends QBEventTarget {
     #aborted = false;
     #reason = undefined;
@@ -157,7 +161,7 @@
       if (this.#aborted)
         throw this.#reason;
     }
-    _abort(reason) {
+    [SYM_ABORT](reason) {
       if (this.#aborted)
         return;
       this.#aborted = true;
@@ -173,7 +177,7 @@
     }
     static abort(reason) {
       const s = new QBAbortSignal;
-      s._abort(reason);
+      s[SYM_ABORT](reason);
       return s;
     }
     static any(signals) {
@@ -195,22 +199,28 @@
       return this.#signal;
     }
     abort(reason) {
-      this.#signal._abort(reason);
+      this.#signal[SYM_ABORT](reason);
     }
   }
   globalThis.AbortSignal = QBAbortSignal;
   globalThis.AbortController = QBAbortController;
 
   // priv/ts/streams.ts
+  var SYM_READ = Symbol("read");
+  var SYM_RELEASE = Symbol("releaseLock");
+  var SYM_CANCEL = Symbol("cancel");
+
   class QBReadableStream {
     #queue = [];
     #state = "readable";
     #storedError = undefined;
-    #pullSource;
+    #source;
+    #controller;
+    #pulling = false;
     #waitingReaders = [];
     #locked = false;
     constructor(source) {
-      this.#pullSource = source;
+      this.#source = source;
       const controller = {
         desiredSize: 1,
         enqueue: (chunk) => {
@@ -245,6 +255,7 @@
           this.#queue = [];
         }
       };
+      this.#controller = controller;
       try {
         const result = source?.start?.(controller);
         if (result instanceof Promise) {
@@ -266,33 +277,54 @@
     async cancel(reason) {
       if (this.#locked)
         throw new TypeError("Cannot cancel a locked stream");
-      await this.#pullSource?.cancel?.(reason);
+      await this.#source?.cancel?.(reason);
       this.#state = "closed";
       this.#queue = [];
     }
-    _read() {
+    [SYM_READ]() {
       if (this.#state === "errored") {
         return Promise.reject(this.#storedError);
       }
       if (this.#queue.length > 0) {
         const value = this.#queue.shift();
-        if (value !== undefined) {
-          return Promise.resolve({ value, done: false });
-        }
+        this.#callPull();
+        return Promise.resolve({ value, done: false });
       }
       if (this.#state === "closed") {
         return Promise.resolve({ value: undefined, done: true });
       }
+      this.#callPull();
       return new Promise((resolve, reject) => {
         this.#waitingReaders.push({ resolve, reject });
       });
     }
-    _releaseLock() {
+    [SYM_RELEASE]() {
       this.#locked = false;
     }
-    _cancel(reason) {
-      const result = this.#pullSource?.cancel?.(reason);
+    [SYM_CANCEL](reason) {
+      const result = this.#source?.cancel?.(reason);
       return result instanceof Promise ? result : Promise.resolve();
+    }
+    #callPull() {
+      if (this.#pulling || this.#state !== "readable" || !this.#source?.pull)
+        return;
+      this.#pulling = true;
+      try {
+        const result = this.#source.pull(this.#controller);
+        if (result instanceof Promise) {
+          result.then(() => {
+            this.#pulling = false;
+          }).catch((e) => {
+            this.#pulling = false;
+            this.#controller.error(e);
+          });
+        } else {
+          this.#pulling = false;
+        }
+      } catch (e) {
+        this.#pulling = false;
+        this.#controller.error(e);
+      }
     }
     async* [Symbol.asyncIterator]() {
       const reader = this.getReader();
@@ -368,14 +400,14 @@
       return this.#closed;
     }
     read() {
-      return this.#stream._read();
+      return this.#stream[SYM_READ]();
     }
     releaseLock() {
-      this.#stream._releaseLock();
+      this.#stream[SYM_RELEASE]();
       this.#closedResolve();
     }
     async cancel(reason) {
-      await this.#stream._cancel(reason);
+      await this.#stream[SYM_CANCEL](reason);
       this.releaseLock();
     }
   }
@@ -383,6 +415,7 @@
   globalThis.ReadableStreamDefaultReader = QBReadableStreamDefaultReader;
 
   // priv/ts/blob.ts
+  var SYM_BYTES = Symbol("bytes");
   function normalizeQBBlobPart(part) {
     if (part instanceof Uint8Array)
       return part;
@@ -391,7 +424,7 @@
     if (part instanceof DataView)
       return new Uint8Array(part.buffer, part.byteOffset, part.byteLength);
     if (part instanceof QBBlob)
-      return part._bytes();
+      return part[SYM_BYTES]();
     if (typeof part === "string")
       return new TextEncoder().encode(part);
     return new Uint8Array(0);
@@ -435,16 +468,16 @@
       return this.#type;
     }
     async arrayBuffer() {
-      return this._bytes().buffer;
+      return this[SYM_BYTES]().buffer;
     }
     async text() {
-      return new TextDecoder().decode(this._bytes());
+      return new TextDecoder().decode(this[SYM_BYTES]());
     }
     async bytes() {
-      return this._bytes();
+      return this[SYM_BYTES]();
     }
     slice(start, end, contentType) {
-      const bytes = this._bytes();
+      const bytes = this[SYM_BYTES]();
       const s = clampIndex(start ?? 0, bytes.length);
       const e = clampIndex(end ?? bytes.length, bytes.length);
       return new QBBlob([bytes.slice(s, Math.max(s, e))], {
@@ -452,7 +485,7 @@
       });
     }
     stream() {
-      const bytes = this._bytes();
+      const bytes = this[SYM_BYTES]();
       return new QBReadableStream({
         start(controller) {
           if (bytes.length > 0)
@@ -461,7 +494,7 @@
         }
       });
     }
-    _bytes() {
+    [SYM_BYTES]() {
       return concatBytes(this.#parts);
     }
   }
@@ -557,7 +590,7 @@
       return { bytes: new Uint8Array(body), contentType: null };
     }
     if (body instanceof QBBlob) {
-      return { bytes: body._bytes(), contentType: body.type || null };
+      return { bytes: body[SYM_BYTES](), contentType: body.type || null };
     }
     if (body instanceof URLSearchParams) {
       return {
@@ -770,6 +803,7 @@
   globalThis.fetch = qbFetch;
 
   // priv/ts/broadcast-channel.ts
+  var SYM_RECEIVE = Symbol("receive");
   var channelRegistry = new Map;
   function registerChannel(ch) {
     let set = channelRegistry.get(ch.name);
@@ -809,9 +843,9 @@
         return;
       this.#closed = true;
       unregisterChannel(this);
-      beam.call("__broadcast_leave", this.name);
+      beam.callSync("__broadcast_leave", this.name);
     }
-    _receive(data) {
+    [SYM_RECEIVE](data) {
       if (this.#closed)
         return;
       const event = new QBMessageEvent("message", { data });
@@ -825,10 +859,12 @@
     if (!set)
       return;
     for (const ch of set)
-      ch._receive(data);
+      ch[SYM_RECEIVE](data);
   };
 
   // priv/ts/websocket.ts
+  var SYM_HANDLE_EVENT = Symbol("handleEvent");
+
   class QBWebSocket extends QBEventTarget {
     static CONNECTING = 0;
     static OPEN = 1;
@@ -883,10 +919,10 @@
         payload = data;
       } else if (data instanceof ArrayBuffer) {
         payload = new Uint8Array(data);
-      } else if (data instanceof Blob) {
-        payload = data._bytes();
+      } else if (data instanceof QBBlob) {
+        payload = data[SYM_BYTES]();
       } else {
-        payload = String(data);
+        payload = JSON.stringify(data);
       }
       beam.call("__ws_send", this.#id, payload);
     }
@@ -899,7 +935,7 @@
       this.#readyState = QBWebSocket.CLOSING;
       beam.call("__ws_close", this.#id, code ?? 1000, reason ?? "");
     }
-    _handleEvent(type, detail) {
+    [SYM_HANDLE_EVENT](type, detail) {
       switch (type) {
         case "open":
           this.#readyState = QBWebSocket.OPEN;

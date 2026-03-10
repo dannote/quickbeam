@@ -1,5 +1,7 @@
 import { QBEventTarget, QBMessageEvent, QBDOMException } from "./event-target";
 
+const SYM_RECEIVE = Symbol("receive");
+
 const channelRegistry = new Map<string, Set<QBBroadcastChannel>>();
 
 function registerChannel(ch: QBBroadcastChannel): void {
@@ -42,11 +44,10 @@ class QBBroadcastChannel extends QBEventTarget {
     if (this.#closed) return;
     this.#closed = true;
     unregisterChannel(this);
-    void beam.call("__broadcast_leave", this.name);
+    beam.callSync("__broadcast_leave", this.name);
   }
 
-  /** @internal */
-  _receive(data: unknown): void {
+  [SYM_RECEIVE](data: unknown): void {
     if (this.#closed) return;
     const event = new QBMessageEvent("message", { data });
     this.onmessage?.(event);
@@ -61,5 +62,5 @@ class QBBroadcastChannel extends QBEventTarget {
 ) => {
   const set = channelRegistry.get(channel);
   if (!set) return;
-  for (const ch of set) ch._receive(data);
+  for (const ch of set) ch[SYM_RECEIVE](data);
 };

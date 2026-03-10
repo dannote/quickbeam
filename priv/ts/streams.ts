@@ -18,11 +18,17 @@ export interface QBReadableStreamReadResult<R> {
 
 type ReadableStreamState = "readable" | "closed" | "errored";
 
+const SYM_READ = Symbol("read");
+const SYM_RELEASE = Symbol("releaseLock");
+const SYM_CANCEL = Symbol("cancel");
+
 export class QBReadableStream<R = unknown> {
   #queue: R[] = [];
   #state: ReadableStreamState = "readable";
   #storedError: unknown = undefined;
-  #pullSource: QBUnderlyingSource<R> | undefined;
+  #source: QBUnderlyingSource<R> | undefined;
+  #controller!: QBReadableStreamController<R>;
+  #pulling = false;
   #waitingReaders: Array<{
     resolve: (result: QBReadableStreamReadResult<R>) => void;
     reject: (reason: unknown) => void;
@@ -30,7 +36,7 @@ export class QBReadableStream<R = unknown> {
   #locked = false;
 
   constructor(source?: QBUnderlyingSource<R>) {
-    this.#pullSource = source;
+    this.#source = source;
 
     const controller: QBReadableStreamController<R> = {
       desiredSize: 1,
@@ -67,6 +73,8 @@ export class QBReadableStream<R = unknown> {
       },
     };
 
+    this.#controller = controller;
+
     try {
       const result = source?.start?.(controller);
       if (result instanceof Promise) {
@@ -89,42 +97,62 @@ export class QBReadableStream<R = unknown> {
 
   async cancel(reason?: unknown): Promise<void> {
     if (this.#locked) throw new TypeError("Cannot cancel a locked stream");
-    await this.#pullSource?.cancel?.(reason);
+    await this.#source?.cancel?.(reason);
     this.#state = "closed";
     this.#queue = [];
   }
 
-  /** @internal */
-  _read(): Promise<QBReadableStreamReadResult<R>> {
+  [SYM_READ](): Promise<QBReadableStreamReadResult<R>> {
     if (this.#state === "errored") {
       return Promise.reject(this.#storedError);
     }
 
     if (this.#queue.length > 0) {
-      const value = this.#queue.shift();
-      if (value !== undefined) {
-        return Promise.resolve({ value, done: false });
-      }
+      const value = this.#queue.shift() as R;
+      this.#callPull();
+      return Promise.resolve({ value, done: false });
     }
 
     if (this.#state === "closed") {
       return Promise.resolve({ value: undefined as R, done: true });
     }
 
+    this.#callPull();
     return new Promise<QBReadableStreamReadResult<R>>((resolve, reject) => {
       this.#waitingReaders.push({ resolve, reject });
     });
   }
 
-  /** @internal */
-  _releaseLock(): void {
+  [SYM_RELEASE](): void {
     this.#locked = false;
   }
 
-  /** @internal */
-  _cancel(reason?: unknown): Promise<void> {
-    const result = this.#pullSource?.cancel?.(reason);
+  [SYM_CANCEL](reason?: unknown): Promise<void> {
+    const result = this.#source?.cancel?.(reason);
     return result instanceof Promise ? result : Promise.resolve();
+  }
+
+  #callPull(): void {
+    if (this.#pulling || this.#state !== "readable" || !this.#source?.pull) return;
+    this.#pulling = true;
+    try {
+      const result = this.#source.pull(this.#controller);
+      if (result instanceof Promise) {
+        void result
+          .then(() => {
+            this.#pulling = false;
+          })
+          .catch((e: unknown) => {
+            this.#pulling = false;
+            this.#controller.error(e);
+          });
+      } else {
+        this.#pulling = false;
+      }
+    } catch (e) {
+      this.#pulling = false;
+      this.#controller.error(e);
+    }
   }
 
   async *[Symbol.asyncIterator](): AsyncIterableIterator<R> {
@@ -205,16 +233,16 @@ export class QBReadableStreamDefaultReader<R = unknown> {
   }
 
   read(): Promise<QBReadableStreamReadResult<R>> {
-    return this.#stream._read();
+    return this.#stream[SYM_READ]();
   }
 
   releaseLock(): void {
-    this.#stream._releaseLock();
+    this.#stream[SYM_RELEASE]();
     this.#closedResolve();
   }
 
   async cancel(reason?: unknown): Promise<void> {
-    await this.#stream._cancel(reason);
+    await this.#stream[SYM_CANCEL](reason);
     this.releaseLock();
   }
 }

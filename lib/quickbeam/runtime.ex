@@ -63,6 +63,7 @@ defmodule QuickBEAM.Runtime do
     "__compress" => &QuickBEAM.Compression.compress/1,
     "__decompress" => &QuickBEAM.Compression.decompress/1,
     "__fetch" => &QuickBEAM.Fetch.fetch/1,
+    # {:with_caller, fun/2} — receives [args, caller_pid] instead of [args]
     "__broadcast_join" => {:with_caller, &QuickBEAM.BroadcastChannel.join/2},
     "__broadcast_post" => {:with_caller, &QuickBEAM.BroadcastChannel.post/2},
     "__broadcast_leave" => {:with_caller, &QuickBEAM.BroadcastChannel.leave/2}
@@ -186,23 +187,17 @@ defmodule QuickBEAM.Runtime do
       nil ->
         QuickBEAM.Native.reject_call_term(resource, call_id, "Unknown handler: #{handler_name}")
 
-      {:with_caller, handler} ->
+      handler ->
         Task.start(fn ->
           try do
             args = if is_list(args), do: args, else: [args]
-            result = handler.(args, caller)
-            QuickBEAM.Native.resolve_call_term(resource, call_id, result)
-          rescue
-            e ->
-              QuickBEAM.Native.reject_call_term(resource, call_id, Exception.message(e))
-          end
-        end)
 
-      handler when is_function(handler) ->
-        Task.start(fn ->
-          try do
-            args = if is_list(args), do: args, else: [args]
-            result = handler.(args)
+            result =
+              case handler do
+                {:with_caller, fun} -> fun.(args, caller)
+                fun -> fun.(args)
+              end
+
             QuickBEAM.Native.resolve_call_term(resource, call_id, result)
           rescue
             e ->

@@ -1,4 +1,7 @@
 import { QBEventTarget, QBEvent, QBDOMException } from "./event-target";
+
+const SYM_ABORT = Symbol("abort");
+
 export class QBAbortSignal extends QBEventTarget {
   #aborted = false;
   #reason: unknown = undefined;
@@ -17,8 +20,7 @@ export class QBAbortSignal extends QBEventTarget {
     if (this.#aborted) throw this.#reason;
   }
 
-  /** @internal */
-  _abort(reason?: unknown): void {
+  [SYM_ABORT](reason?: unknown): void {
     if (this.#aborted) return;
     this.#aborted = true;
     this.#reason = reason ?? new QBDOMException("The operation was aborted.", "AbortError");
@@ -38,7 +40,7 @@ export class QBAbortSignal extends QBEventTarget {
 
   static abort(reason?: unknown): QBAbortSignal {
     const s = new QBAbortSignal();
-    s._abort(reason);
+    s[SYM_ABORT](reason);
     return s;
   }
 
@@ -63,7 +65,7 @@ export class QBAbortController {
   }
 
   abort(reason?: unknown): void {
-    this.#signal._abort(reason);
+    this.#signal[SYM_ABORT](reason);
   }
 }
 
