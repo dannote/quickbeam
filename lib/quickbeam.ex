@@ -234,4 +234,20 @@ defmodule QuickBEAM do
   def get_global(runtime, name) when is_binary(name) do
     eval(runtime, "globalThis[#{inspect(name)}]")
   end
+
+  @doc """
+  Return runtime diagnostics: registered handlers, memory stats, and JS global count.
+  """
+  @spec info(runtime()) :: map()
+  def info(runtime) do
+    handlers = GenServer.call(runtime, :info, :infinity)
+    mem = memory_usage(runtime)
+    {:ok, global_count} = eval(runtime, "Object.getOwnPropertyNames(globalThis).length")
+
+    %{
+      handlers: handlers,
+      memory: mem,
+      global_count: global_count
+    }
+  end
 end

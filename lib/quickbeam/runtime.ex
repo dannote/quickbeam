@@ -163,6 +163,17 @@ defmodule QuickBEAM.Runtime do
   end
 
   @impl true
+  def handle_call(:info, _from, state) do
+    handlers =
+      state.handlers
+      |> Map.keys()
+      |> Enum.reject(&String.starts_with?(&1, "__"))
+      |> Enum.sort()
+
+    {:reply, handlers, state}
+  end
+
+  @impl true
   def handle_call({:eval, code}, from, state) do
     resource = state.resource
 

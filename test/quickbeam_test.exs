@@ -286,6 +286,19 @@ defmodule QuickBEAMTest do
       assert {:ok, %{"x" => 1, "y" => 2}} = QuickBEAM.get_global(rt, "obj")
       QuickBEAM.stop(rt)
     end
+
+    test "info returns handlers, memory, and global count" do
+      {:ok, rt} = QuickBEAM.start(handlers: %{"greet" => fn [n] -> "Hi #{n}" end})
+      QuickBEAM.eval(rt, "globalThis.x = 1")
+
+      info = QuickBEAM.info(rt)
+      assert info.handlers == ["greet"]
+      assert is_integer(info.memory.memory_used_size)
+      assert info.memory.memory_used_size > 0
+      assert is_integer(info.global_count)
+      assert info.global_count > 0
+      QuickBEAM.stop(rt)
+    end
   end
 
   describe "bytecode" do
