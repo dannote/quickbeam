@@ -26,7 +26,7 @@ pub const WorkerState = struct {
     timers: std.AutoHashMap(u64, TimerEntry),
     next_call_id: u64 = 1,
     next_timer_id: u64 = 1,
-    buf: [4096]u8 = undefined,
+    buf: [4096]u8 = @splat(0),
 
     pub fn deinit(self: *WorkerState) void {
         var call_it = self.pending_calls.valueIterator();
@@ -311,7 +311,7 @@ pub const WorkerState = struct {
                     else => {},
                 }
             } else {
-                std.Thread.yield() catch {};
+                std.Thread.yield() catch |err| std.debug.print("yield error: {}\n", .{err});
             }
 
             self.drain_jobs();

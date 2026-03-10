@@ -9,7 +9,8 @@ defmodule QuickBEAM.MixProject do
       version: @version,
       elixir: "~> 1.15",
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      aliases: aliases()
     ]
   end
 
@@ -17,6 +18,12 @@ defmodule QuickBEAM.MixProject do
     [
       extra_applications: [:logger],
       mod: {QuickBEAM.Application, []}
+    ]
+  end
+
+  defp aliases do
+    [
+      lint: ["format --check-formatted", "cmd zlint lib/quickbeam/*.zig"]
     ]
   end
 

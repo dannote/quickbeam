@@ -185,6 +185,7 @@ fn make_atom(env: ?*e.ErlNifEnv, name: []const u8) e.ErlNifTerm {
 }
 
 fn make_binary_term(env: ?*e.ErlNifEnv, data: []const u8) e.ErlNifTerm {
+    // SAFETY: immediately initialized by enif_alloc_binary below
     var bin: e.ErlNifBinary = undefined;
     _ = e.enif_alloc_binary(data.len, &bin);
     @memcpy(bin.data[0..data.len], data);
