@@ -41,6 +41,20 @@ function bufferSourceToBytes(data: ArrayBuffer | Uint8Array | ArrayBufferView): 
   return new Uint8Array(0);
 }
 
+function cipher(
+  handler: string,
+  algorithm: AlgorithmIdentifier,
+  key: CryptoKeyInternal,
+  data: BufferSource,
+): ArrayBuffer {
+  const algo: CryptoAlgoParams = { ...normalizeCryptoAlgo(algorithm) };
+  if (algo.iv) algo.iv = bufferSourceToBytes(algo.iv);
+  if (algo.additionalData) algo.additionalData = bufferSourceToBytes(algo.additionalData);
+  return ensureArrayBuffer(
+    beam.callSync(handler, algo, key, bufferSourceToBytes(data)),
+  );
+}
+
 function ensureArrayBuffer(result: unknown): ArrayBuffer {
   if (result instanceof ArrayBuffer) return result;
   if (result instanceof Uint8Array) return result.buffer as ArrayBuffer;
@@ -103,12 +117,7 @@ const subtle = {
     key: CryptoKeyInternal,
     data: BufferSource,
   ): Promise<ArrayBuffer> {
-    const algo: CryptoAlgoParams = { ...normalizeCryptoAlgo(algorithm) };
-    if (algo.iv) algo.iv = bufferSourceToBytes(algo.iv);
-    if (algo.additionalData) algo.additionalData = bufferSourceToBytes(algo.additionalData);
-    return ensureArrayBuffer(
-      beam.callSync("__crypto_encrypt", algo, key, bufferSourceToBytes(data)),
-    );
+    return cipher("__crypto_encrypt", algorithm, key, data);
   },
 
   async decrypt(
@@ -116,12 +125,7 @@ const subtle = {
     key: CryptoKeyInternal,
     data: BufferSource,
   ): Promise<ArrayBuffer> {
-    const algo: CryptoAlgoParams = { ...normalizeCryptoAlgo(algorithm) };
-    if (algo.iv) algo.iv = bufferSourceToBytes(algo.iv);
-    if (algo.additionalData) algo.additionalData = bufferSourceToBytes(algo.additionalData);
-    return ensureArrayBuffer(
-      beam.callSync("__crypto_decrypt", algo, key, bufferSourceToBytes(data)),
-    );
+    return cipher("__crypto_decrypt", algorithm, key, data);
   },
 
   async deriveBits(

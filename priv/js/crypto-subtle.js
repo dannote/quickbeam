@@ -12,6 +12,14 @@
       return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
     return new Uint8Array(0);
   }
+  function cipher(handler, algorithm, key, data) {
+    const algo = { ...normalizeCryptoAlgo(algorithm) };
+    if (algo.iv)
+      algo.iv = bufferSourceToBytes(algo.iv);
+    if (algo.additionalData)
+      algo.additionalData = bufferSourceToBytes(algo.additionalData);
+    return ensureArrayBuffer(beam.callSync(handler, algo, key, bufferSourceToBytes(data)));
+  }
   function ensureArrayBuffer(result) {
     if (result instanceof ArrayBuffer)
       return result;
@@ -44,20 +52,10 @@
       return beam.callSync("__crypto_verify", algo, key, bufferSourceToBytes(signature), bufferSourceToBytes(data));
     },
     async encrypt(algorithm, key, data) {
-      const algo = { ...normalizeCryptoAlgo(algorithm) };
-      if (algo.iv)
-        algo.iv = bufferSourceToBytes(algo.iv);
-      if (algo.additionalData)
-        algo.additionalData = bufferSourceToBytes(algo.additionalData);
-      return ensureArrayBuffer(beam.callSync("__crypto_encrypt", algo, key, bufferSourceToBytes(data)));
+      return cipher("__crypto_encrypt", algorithm, key, data);
     },
     async decrypt(algorithm, key, data) {
-      const algo = { ...normalizeCryptoAlgo(algorithm) };
-      if (algo.iv)
-        algo.iv = bufferSourceToBytes(algo.iv);
-      if (algo.additionalData)
-        algo.additionalData = bufferSourceToBytes(algo.additionalData);
-      return ensureArrayBuffer(beam.callSync("__crypto_decrypt", algo, key, bufferSourceToBytes(data)));
+      return cipher("__crypto_decrypt", algorithm, key, data);
     },
     async deriveBits(algorithm, baseKey, length) {
       const algo = { ...normalizeCryptoAlgo(algorithm) };

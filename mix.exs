@@ -29,7 +29,8 @@ defmodule QuickBEAM.MixProject do
         "credo --strict",
         "ex_dna",
         "cmd zlint lib/quickbeam/*.zig",
-        "cmd bun run check"
+        "cmd bun run check",
+        "cmd bunx jscpd lib/quickbeam/*.zig priv/ts/*.ts --min-tokens 50 --threshold 0"
       ],
       "js.build": "cmd bun run build",
       "fuzz.sanity": "cmd --cd fuzz zig build test"

@@ -9,6 +9,7 @@
     "lint": "oxlint -c oxlint.json --type-aware --type-check priv/ts/"
   },
   "devDependencies": {
+    "jscpd": "^4.0.8",
     "oxfmt": "^0.37.0",
     "oxlint": "^1.52.0",
     "oxlint-tsgolint": "^0.16.0"
