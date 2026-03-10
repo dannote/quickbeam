@@ -28,3 +28,5 @@ lib/**/.Elixir.*.zig
 # Compiled NIF libraries
 priv/lib/
 test/wpt_reference/
+fuzz/.zig-cache/
+fuzz/zig-out/

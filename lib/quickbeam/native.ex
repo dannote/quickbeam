@@ -21,6 +21,7 @@ defmodule QuickBEAM.Native do
       start_runtime: [],
       resolve_call: [],
       reject_call: [],
-      send_message: []
+      send_message: [],
+      memory_usage: [:dirty_io]
     ]
 end

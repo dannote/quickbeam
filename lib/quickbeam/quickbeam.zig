@@ -147,6 +147,29 @@ pub fn reject_call(resource: RuntimeResource, call_id: u64, reason: []const u8) 
     return beam.make(.ok, .{});
 }
 
+pub fn memory_usage(resource: RuntimeResource) beam.term {
+    var result = types.MemoryUsageResult{};
+    var done = std.Thread.ResetEvent{};
+    result.done = &done;
+
+    enqueue(resource.unpack(), .{ .memory_usage = &result });
+    done.wait();
+
+    return beam.make(.{
+        .malloc_size = result.malloc_size,
+        .malloc_count = result.malloc_count,
+        .memory_used_size = result.memory_used_size,
+        .atom_count = result.atom_count,
+        .str_count = result.str_count,
+        .obj_count = result.obj_count,
+        .prop_count = result.prop_count,
+        .shape_count = result.shape_count,
+        .js_func_count = result.js_func_count,
+        .c_func_count = result.c_func_count,
+        .array_count = result.array_count,
+    }, .{});
+}
+
 pub fn send_message(resource: RuntimeResource, json: []const u8) beam.term {
     const json_copy = gpa.dupe(u8, json) catch return beam.make(.ok, .{});
     enqueue(resource.unpack(), .{ .send_message = .{ .data = json_copy } });

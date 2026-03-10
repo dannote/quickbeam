@@ -37,6 +37,11 @@ defmodule QuickBEAM.Runtime do
     GenServer.stop(server)
   end
 
+  @spec memory_usage(GenServer.server()) :: map()
+  def memory_usage(server) do
+    GenServer.call(server, :memory_usage, :infinity)
+  end
+
   @spec send_message(GenServer.server(), term()) :: :ok
   def send_message(server, message) do
     GenServer.cast(server, {:send_message, message})
@@ -119,6 +124,10 @@ defmodule QuickBEAM.Runtime do
     end)
 
     {:noreply, state}
+  end
+
+  def handle_call(:memory_usage, _from, state) do
+    {:reply, QuickBEAM.Native.memory_usage(state.resource), state}
   end
 
   @impl true

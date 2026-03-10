@@ -14,6 +14,21 @@ pub const RuntimeData = struct {
     thread: ?std.Thread,
 };
 
+pub const MemoryUsageResult = struct {
+    malloc_size: i64 = 0,
+    malloc_count: i64 = 0,
+    memory_used_size: i64 = 0,
+    atom_count: i64 = 0,
+    str_count: i64 = 0,
+    obj_count: i64 = 0,
+    prop_count: i64 = 0,
+    shape_count: i64 = 0,
+    js_func_count: i64 = 0,
+    c_func_count: i64 = 0,
+    array_count: i64 = 0,
+    done: ?*std.Thread.ResetEvent = null,
+};
+
 pub const Message = union(enum) {
     eval: RequestPayload,
     call_fn: CallPayload,
@@ -22,6 +37,7 @@ pub const Message = union(enum) {
     resolve_call: CallResponse,
     reject_call: CallResponse,
     send_message: StringPayload,
+    memory_usage: *MemoryUsageResult,
     stop,
 };
 

@@ -2,7 +2,91 @@ defmodule QuickBEAM.MemoryTest do
   use ExUnit.Case
 
   @tag :memory
-  describe "memory stability" do
+  describe "QuickJS memory usage" do
+    test "memory_usage returns QuickJS internals", %{} do
+      {:ok, rt} = QuickBEAM.start()
+      usage = QuickBEAM.memory_usage(rt)
+
+      assert is_integer(usage.malloc_size)
+      assert usage.malloc_size > 0
+      assert is_integer(usage.atom_count)
+      assert usage.atom_count > 0
+      assert is_integer(usage.obj_count)
+
+      QuickBEAM.stop(rt)
+    end
+
+    test "memory_usage grows with allocations", %{} do
+      {:ok, rt} = QuickBEAM.start()
+      before = QuickBEAM.memory_usage(rt)
+
+      QuickBEAM.eval(rt, """
+      globalThis.bigArray = [];
+      for (let i = 0; i < 10000; i++) bigArray.push({x: i, y: 'hello'});
+      """)
+
+      after_alloc = QuickBEAM.memory_usage(rt)
+      assert after_alloc.malloc_size > before.malloc_size
+      assert after_alloc.obj_count > before.obj_count
+
+      QuickBEAM.stop(rt)
+    end
+
+    test "memory stabilizes across reset cycles", %{} do
+      {:ok, rt} = QuickBEAM.start()
+
+      # First cycle establishes the pool size
+      QuickBEAM.eval(rt, """
+      globalThis.data = [];
+      for (let i = 0; i < 5000; i++) data.push({x: i});
+      """)
+
+      QuickBEAM.reset(rt)
+      first_reset = QuickBEAM.memory_usage(rt)
+
+      # Subsequent cycles should not grow
+      for _ <- 1..5 do
+        QuickBEAM.eval(rt, """
+        globalThis.data = [];
+        for (let i = 0; i < 5000; i++) data.push({x: i});
+        """)
+
+        QuickBEAM.reset(rt)
+      end
+
+      after_cycles = QuickBEAM.memory_usage(rt)
+
+      growth = after_cycles.malloc_size - first_reset.malloc_size
+
+      assert growth <= 0,
+             "Memory grew by #{growth} bytes across 5 reset cycles (pool should be stable)"
+
+      QuickBEAM.stop(rt)
+    end
+
+    test "eval cycles don't accumulate memory", %{} do
+      {:ok, rt} = QuickBEAM.start()
+
+      # Warm up
+      for _ <- 1..10, do: QuickBEAM.eval(rt, "JSON.parse(JSON.stringify({a: 1}))")
+      before = QuickBEAM.memory_usage(rt)
+
+      for _ <- 1..1000 do
+        QuickBEAM.eval(rt, "JSON.parse(JSON.stringify({a: [1,2,3], b: 'hello world'}))")
+      end
+
+      after_loop = QuickBEAM.memory_usage(rt)
+      growth = after_loop.malloc_size - before.malloc_size
+
+      # QuickJS GC should keep memory stable — allow 100KB growth max
+      assert growth < 100 * 1024,
+             "QuickJS memory grew by #{div(growth, 1024)}KB over 1000 eval cycles"
+
+      QuickBEAM.stop(rt)
+    end
+  end
+
+  describe "BEAM memory stability" do
     test "eval cycle does not leak" do
       {:ok, rt} = QuickBEAM.start()
 

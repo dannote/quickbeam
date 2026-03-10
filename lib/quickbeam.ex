@@ -32,6 +32,11 @@ defmodule QuickBEAM do
     QuickBEAM.Runtime.stop(runtime)
   end
 
+  @spec memory_usage(runtime()) :: map()
+  def memory_usage(runtime) do
+    QuickBEAM.Runtime.memory_usage(runtime)
+  end
+
   @spec send_message(runtime(), term()) :: :ok
   def send_message(runtime, message) do
     QuickBEAM.Runtime.send_message(runtime, message)

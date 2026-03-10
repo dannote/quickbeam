@@ -394,6 +394,23 @@ pub fn worker_main(rd: *types.RuntimeData, owner_pid: beam.pid) void {
                 .resolve_call => |rc| state.resolve_pending(rc.id, rc.json),
                 .reject_call => |rc| state.reject_pending(rc.id, rc.json),
                 .send_message => |sm| gpa.free(sm.data),
+                .memory_usage => |mu| {
+                    // SAFETY: immediately filled by JS_ComputeMemoryUsage
+                    var usage: qjs.JSMemoryUsage = undefined;
+                    qjs.JS_ComputeMemoryUsage(state.rt, &usage);
+                    mu.malloc_size = usage.malloc_size;
+                    mu.malloc_count = usage.malloc_count;
+                    mu.memory_used_size = usage.memory_used_size;
+                    mu.atom_count = usage.atom_count;
+                    mu.str_count = usage.str_count;
+                    mu.obj_count = usage.obj_count;
+                    mu.prop_count = usage.prop_count;
+                    mu.shape_count = usage.shape_count;
+                    mu.js_func_count = usage.js_func_count;
+                    mu.c_func_count = usage.c_func_count;
+                    mu.array_count = usage.array_count;
+                    mu.done.?.set();
+                },
                 .stop => break,
             }
         }
