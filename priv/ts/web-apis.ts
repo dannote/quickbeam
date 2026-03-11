@@ -6,3 +6,4 @@ import "./headers";
 import "./fetch";
 import "./broadcast-channel";
 import "./websocket";
+import "./console-ext";

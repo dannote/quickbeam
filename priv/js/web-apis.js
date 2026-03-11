@@ -411,8 +411,251 @@
       this.releaseLock();
     }
   }
+
+  class QBWritableStream {
+    #sink;
+    #state = "writable";
+    #storedError = undefined;
+    #locked = false;
+    #controller;
+    #closeResolve;
+    #closeReject;
+    #abortController = new AbortController;
+    constructor(sink) {
+      this.#sink = sink;
+      const controller = {
+        get signal() {
+          return this._ac.signal;
+        },
+        error: (e) => {
+          if (this.#state !== "writable")
+            return;
+          this.#state = "errored";
+          this.#storedError = e;
+          this.#closeReject?.(e);
+        }
+      };
+      controller._ac = this.#abortController;
+      this.#controller = controller;
+      try {
+        const result = sink?.start?.(controller);
+        if (result instanceof Promise) {
+          result.catch((e) => controller.error(e));
+        }
+      } catch (e) {
+        controller.error(e);
+      }
+    }
+    get locked() {
+      return this.#locked;
+    }
+    async abort(reason) {
+      if (this.#locked)
+        throw new TypeError("Cannot abort a locked stream");
+      this.#abortController.abort(reason);
+      await this.#sink?.abort?.(reason);
+      this.#state = "errored";
+      this.#storedError = reason;
+    }
+    async close() {
+      if (this.#locked)
+        throw new TypeError("Cannot close a locked stream");
+      if (this.#state !== "writable")
+        throw new TypeError("Stream is not writable");
+      await this.#sink?.close?.();
+      this.#state = "closed";
+    }
+    getWriter() {
+      if (this.#locked)
+        throw new TypeError("WritableStream is already locked");
+      this.#locked = true;
+      return new QBWritableStreamDefaultWriter(this);
+    }
+    async _write(chunk) {
+      if (this.#state !== "writable") {
+        throw this.#storedError ?? new TypeError("Stream is not writable");
+      }
+      await this.#sink?.write?.(chunk, this.#controller);
+    }
+    async _close() {
+      if (this.#state !== "writable")
+        return;
+      await this.#sink?.close?.();
+      this.#state = "closed";
+      this.#closeResolve?.();
+    }
+    async _abort(reason) {
+      this.#abortController.abort(reason);
+      await this.#sink?.abort?.(reason);
+      this.#state = "errored";
+      this.#storedError = reason;
+      this.#closeReject?.(reason);
+    }
+    _releaseLock() {
+      this.#locked = false;
+    }
+    _closed() {
+      if (this.#state === "closed")
+        return Promise.resolve();
+      if (this.#state === "errored")
+        return Promise.reject(this.#storedError);
+      return new Promise((resolve, reject) => {
+        this.#closeResolve = resolve;
+        this.#closeReject = reject;
+      });
+    }
+    _desiredSize() {
+      return this.#state === "writable" ? 1 : 0;
+    }
+    _ready() {
+      return this.#state === "writable" ? Promise.resolve() : Promise.reject(this.#storedError);
+    }
+  }
+
+  class QBWritableStreamDefaultWriter {
+    #stream;
+    #closedPromise;
+    constructor(stream) {
+      this.#stream = stream;
+      this.#closedPromise = stream._closed();
+    }
+    get closed() {
+      return this.#closedPromise;
+    }
+    get desiredSize() {
+      return this.#stream._desiredSize();
+    }
+    get ready() {
+      return this.#stream._ready();
+    }
+    async write(chunk) {
+      await this.#stream._write(chunk);
+    }
+    async close() {
+      await this.#stream._close();
+      this.releaseLock();
+    }
+    async abort(reason) {
+      await this.#stream._abort(reason);
+      this.releaseLock();
+    }
+    releaseLock() {
+      this.#stream._releaseLock();
+    }
+  }
+
+  class QBTransformStream {
+    readable;
+    writable;
+    constructor(transformer) {
+      let readableController;
+      this.readable = new QBReadableStream({
+        start(controller) {
+          readableController = controller;
+        }
+      });
+      const tController = {
+        enqueue(chunk) {
+          readableController.enqueue(chunk);
+        },
+        error(reason) {
+          readableController.error(reason);
+        },
+        terminate() {
+          readableController.close();
+        },
+        get desiredSize() {
+          return readableController.desiredSize;
+        }
+      };
+      try {
+        transformer?.start?.(tController);
+      } catch (e) {
+        readableController.error(e);
+      }
+      this.writable = new QBWritableStream({
+        async write(chunk) {
+          if (transformer?.transform) {
+            await transformer.transform(chunk, tController);
+          } else {
+            tController.enqueue(chunk);
+          }
+        },
+        async close() {
+          if (transformer?.flush) {
+            await transformer.flush(tController);
+          }
+          tController.terminate();
+        },
+        abort(reason) {
+          tController.error(reason);
+        }
+      });
+    }
+  }
+
+  class QBTextEncoderStream extends QBTransformStream {
+    encoding = "utf-8";
+    constructor() {
+      const encoder = new TextEncoder;
+      super({
+        transform(chunk, controller) {
+          controller.enqueue(encoder.encode(chunk));
+        }
+      });
+    }
+  }
+
+  class QBTextDecoderStream extends QBTransformStream {
+    encoding;
+    fatal;
+    ignoreBOM;
+    constructor(label = "utf-8", options) {
+      const decoder = new TextDecoder(label, options);
+      super({
+        transform(chunk, controller) {
+          const input = chunk instanceof ArrayBuffer ? new Uint8Array(chunk) : chunk;
+          controller.enqueue(decoder.decode(input, { stream: true }));
+        },
+        flush(controller) {
+          const final = decoder.decode();
+          if (final)
+            controller.enqueue(final);
+        }
+      });
+      this.encoding = decoder.encoding;
+      this.fatal = decoder.fatal;
+      this.ignoreBOM = decoder.ignoreBOM;
+    }
+  }
+  QBReadableStream.prototype.pipeThrough = function(transform) {
+    this.pipeTo(transform.writable);
+    return transform.readable;
+  };
+  QBReadableStream.prototype.pipeTo = async function(dest) {
+    const reader = this.getReader();
+    const writer = dest.getWriter();
+    try {
+      for (;; ) {
+        const { value, done } = await reader.read();
+        if (done)
+          break;
+        await writer.write(value);
+      }
+      await writer.close();
+    } catch (e) {
+      await writer.abort(e);
+    } finally {
+      reader.releaseLock();
+    }
+  };
   globalThis.ReadableStream = QBReadableStream;
   globalThis.ReadableStreamDefaultReader = QBReadableStreamDefaultReader;
+  globalThis.WritableStream = QBWritableStream;
+  globalThis.WritableStreamDefaultWriter = QBWritableStreamDefaultWriter;
+  globalThis.TransformStream = QBTransformStream;
+  globalThis.TextEncoderStream = QBTextEncoderStream;
+  globalThis.TextDecoderStream = QBTextDecoderStream;
 
   // priv/ts/blob.ts
   var SYM_BYTES = Symbol("bytes");
@@ -977,4 +1220,64 @@
     }
   }
   globalThis.WebSocket = QBWebSocket;
+
+  // priv/ts/console-ext.ts
+  var timers = new Map;
+  var counters = new Map;
+  console.debug = console.log;
+  console.trace = (...args) => {
+    const err = new Error;
+    const stack = err.stack?.split(`
+`).slice(2).join(`
+`) ?? "";
+    console.log("Trace:", ...args, `
+` + stack);
+  };
+  console.assert = (condition, ...args) => {
+    if (!condition) {
+      console.error("Assertion failed:", ...args);
+    }
+  };
+  console.time = (label = "default") => {
+    timers.set(label, performance.now());
+  };
+  console.timeLog = (label = "default", ...args) => {
+    const start = timers.get(label);
+    if (start === undefined) {
+      console.warn(`Timer '${label}' does not exist`);
+      return;
+    }
+    const elapsed = performance.now() - start;
+    console.log(`${label}: ${elapsed.toFixed(3)}ms`, ...args);
+  };
+  console.timeEnd = (label = "default") => {
+    const start = timers.get(label);
+    if (start === undefined) {
+      console.warn(`Timer '${label}' does not exist`);
+      return;
+    }
+    const elapsed = performance.now() - start;
+    timers.delete(label);
+    console.log(`${label}: ${elapsed.toFixed(3)}ms`);
+  };
+  console.count = (label = "default") => {
+    const c = (counters.get(label) ?? 0) + 1;
+    counters.set(label, c);
+    console.log(`${label}: ${c}`);
+  };
+  console.countReset = (label = "default") => {
+    counters.delete(label);
+  };
+  console.dir = (obj) => {
+    try {
+      console.log(JSON.stringify(obj, null, 2));
+    } catch {
+      console.log(String(obj));
+    }
+  };
+  console.group = (...args) => {
+    if (args.length > 0)
+      console.log(...args);
+  };
+  console.groupEnd = () => {};
 })();

@@ -13,6 +13,7 @@ const bundledModules = new Set([
   "fetch.ts",
   "broadcast-channel.ts",
   "websocket.ts",
+  "console-ext.ts",
 ]);
 
 const files = await readdir(srcDir);
