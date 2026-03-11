@@ -184,6 +184,27 @@ defmodule QuickBEAM do
     QuickBEAM.Runtime.stop(runtime)
   end
 
+  @doc """
+  Evaluate TypeScript code by transforming it to JavaScript first.
+
+  Equivalent to `OXC.transform!/2` followed by `eval/3`, but in a single call.
+
+      iex> {:ok, rt} = QuickBEAM.start()
+      iex> QuickBEAM.eval_ts(rt, "const x: number = 40 + 2; x")
+      {:ok, 42}
+      iex> QuickBEAM.stop(rt)
+      :ok
+
+  ## Options
+
+  Accepts the same options as `eval/3` (e.g., `:timeout`).
+  """
+  @spec eval_ts(runtime(), String.t(), keyword()) :: js_result()
+  def eval_ts(runtime, ts_code, opts \\ []) do
+    js = OXC.transform!(ts_code, "eval.ts")
+    eval(runtime, js, opts)
+  end
+
   @doc "Return QuickJS memory usage statistics."
   @spec memory_usage(runtime()) :: map()
   def memory_usage(runtime) do
