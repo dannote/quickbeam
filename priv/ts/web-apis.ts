@@ -1,27 +1,25 @@
-import { DOMException } from "./dom-exception";
-import { Event, MessageEvent, CloseEvent, ErrorEvent } from "./event";
-import { EventTarget } from "./event-target";
-import { AbortSignal, AbortController } from "./abort";
+import { AbortSignal, AbortController } from './abort'
+import { Blob, File } from './blob'
+import { BroadcastChannel } from './broadcast-channel'
+import { DOMException } from './dom-exception'
+import { Event, MessageEvent, CloseEvent, ErrorEvent } from './event'
+import { EventSource } from './event-source'
+import { EventTarget } from './event-target'
+import { Request, Response, fetch } from './fetch'
+import { Headers } from './headers'
 import {
   ReadableStream,
   ReadableStreamDefaultReader,
   WritableStream,
   WritableStreamDefaultWriter,
-  TransformStream,
-  TextEncoderStream,
-  TextDecoderStream,
-} from "./streams";
-import { Blob, File } from "./blob";
-import { Headers } from "./headers";
-import { Request, Response, fetch } from "./fetch";
-import { BroadcastChannel } from "./broadcast-channel";
-import { WebSocket } from "./websocket";
-import { Worker } from "./worker";
-import { EventSource } from "./event-source";
-
-import "./console-ext";
-import "./locks";
-import "./storage";
+  TransformStream
+} from './streams'
+import { TextDecoderStream, TextEncoderStream } from './text-streams'
+import { WebSocket } from './websocket'
+import { Worker } from './worker'
+import './console-ext'
+import './locks'
+import './storage'
 
 Object.assign(globalThis, {
   DOMException,
@@ -48,5 +46,5 @@ Object.assign(globalThis, {
   BroadcastChannel,
   WebSocket,
   Worker,
-  EventSource,
-});
+  EventSource
+})

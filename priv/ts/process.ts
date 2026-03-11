@@ -1,56 +1,53 @@
-const monitorCallbacks = new Map<number, (reason: unknown) => void>();
-let monitorIdCounter = 0;
-let userMessageHandler: ((msg: unknown) => void) | null = null;
+const monitorCallbacks = new Map<number, (reason: unknown) => void>()
+let monitorIdCounter = 0
+let userMessageHandler: ((msg: unknown) => void) | null = null
 
-const originalOnMessage = Process.onMessage.bind(Process);
+const originalOnMessage = Process.onMessage.bind(Process)
 
-Process.monitor = (
-  pid: BeamPid,
-  callback: (reason: unknown) => void,
-): BeamRef => {
-  const id = ++monitorIdCounter;
-  monitorCallbacks.set(id, callback);
-  const ref = beam.callSync("__process_monitor", pid, id) as BeamRef;
-  return ref;
-};
+Process.monitor = (pid: BeamPid, callback: (reason: unknown) => void): BeamRef => {
+  const id = ++monitorIdCounter
+  monitorCallbacks.set(id, callback)
+  const ref = beam.callSync('__process_monitor', pid, id) as BeamRef
+  return ref
+}
 
 Process.demonitor = (ref: BeamRef): void => {
-  const id = beam.callSync("__process_demonitor", ref) as number;
-  if (typeof id === "number") {
-    monitorCallbacks.delete(id);
+  const id = beam.callSync('__process_demonitor', ref) as number
+  if (typeof id === 'number') {
+    monitorCallbacks.delete(id)
   }
-};
+}
 
 Process.onMessage = (handler: (msg: unknown) => void): void => {
-  if (typeof handler !== "function") {
-    throw new TypeError("Process.onMessage requires a function argument");
+  if (typeof handler !== 'function') {
+    throw new TypeError('Process.onMessage requires a function argument')
   }
-  userMessageHandler = handler;
-};
+  userMessageHandler = handler
+}
 
-type InternalDispatcher = (msg: unknown) => boolean;
-const internalDispatchers: InternalDispatcher[] = [];
+type InternalDispatcher = (msg: unknown) => boolean
+const internalDispatchers: InternalDispatcher[] = []
 
-(globalThis as Record<string, unknown>).__qb_register_dispatcher = (fn: InternalDispatcher) => {
-  internalDispatchers.push(fn);
-};
+;(globalThis as Record<string, unknown>).__qb_register_dispatcher = (fn: InternalDispatcher) => {
+  internalDispatchers.push(fn)
+}
 
 originalOnMessage((msg: unknown) => {
-  if (Array.isArray(msg) && msg.length === 3 && msg[0] === "__qb_down") {
-    const [, id, reason] = msg;
-    const cb = monitorCallbacks.get(id as number);
+  if (Array.isArray(msg) && msg.length === 3 && msg[0] === '__qb_down') {
+    const [, id, reason] = msg
+    const cb = monitorCallbacks.get(id as number)
     if (cb) {
-      monitorCallbacks.delete(id as number);
-      cb(reason);
+      monitorCallbacks.delete(id as number)
+      cb(reason)
     }
-    return;
+    return
   }
 
   for (const dispatcher of internalDispatchers) {
-    if (dispatcher(msg)) return;
+    if (dispatcher(msg)) return
   }
 
   if (userMessageHandler) {
-    userMessageHandler(msg);
+    userMessageHandler(msg)
   }
-});
+})

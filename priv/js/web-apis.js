@@ -583,7 +583,10 @@
         }
       };
       try {
-        transformer?.start?.(ctrl);
+        const startResult = transformer?.start?.(ctrl);
+        if (startResult instanceof Promise) {
+          startResult.catch((e) => readableController.error(e));
+        }
       } catch (e) {
         readableController.error(e);
       }
@@ -604,41 +607,6 @@
           ctrl.error(reason);
         }
       });
-    }
-  }
-
-  class TextEncoderStream extends TransformStream {
-    encoding = "utf-8";
-    constructor() {
-      const encoder = new TextEncoder;
-      super({
-        transform(chunk, controller) {
-          controller.enqueue(encoder.encode(chunk));
-        }
-      });
-    }
-  }
-
-  class TextDecoderStream extends TransformStream {
-    encoding;
-    fatal;
-    ignoreBOM;
-    constructor(label = "utf-8", options) {
-      const decoder = new TextDecoder(label, options);
-      super({
-        transform(chunk, controller) {
-          const input = chunk instanceof ArrayBuffer ? new Uint8Array(chunk) : chunk;
-          controller.enqueue(decoder.decode(input, { stream: true }));
-        },
-        flush(controller) {
-          const final = decoder.decode();
-          if (final)
-            controller.enqueue(final);
-        }
-      });
-      this.encoding = decoder.encoding;
-      this.fatal = decoder.fatal;
-      this.ignoreBOM = decoder.ignoreBOM;
     }
   }
 
@@ -739,6 +707,144 @@
       this.lastModified = options?.lastModified ?? Date.now();
     }
   }
+
+  // priv/ts/broadcast-channel.ts
+  var SYM_RECEIVE = Symbol("receive");
+  var channelRegistry = new Map;
+
+  class BroadcastChannel extends EventTarget {
+    name;
+    #closed = false;
+    onmessage = null;
+    onmessageerror = null;
+    constructor(name) {
+      super();
+      this.name = name;
+      let set = channelRegistry.get(name);
+      if (!set) {
+        set = new Set;
+        channelRegistry.set(name, set);
+      }
+      set.add(this);
+      beam.callSync("__broadcast_join", name);
+    }
+    postMessage(message) {
+      if (this.#closed)
+        throw new DOMException("BroadcastChannel is closed", "InvalidStateError");
+      beam.call("__broadcast_post", this.name, structuredClone(message));
+    }
+    close() {
+      if (this.#closed)
+        return;
+      this.#closed = true;
+      const set = channelRegistry.get(this.name);
+      if (set) {
+        set.delete(this);
+        if (set.size === 0)
+          channelRegistry.delete(this.name);
+      }
+      beam.callSync("__broadcast_leave", this.name);
+    }
+    [SYM_RECEIVE](data) {
+      if (this.#closed)
+        return;
+      const event = new MessageEvent("message", { data });
+      this.onmessage?.(event);
+      this.dispatchEvent(event);
+    }
+  }
+  globalThis.__qb_broadcast_dispatch = (channel, data) => {
+    const set = channelRegistry.get(channel);
+    if (!set)
+      return;
+    for (const ch of set)
+      ch[SYM_RECEIVE](data);
+  };
+
+  // priv/ts/event-source.ts
+  var eventSourceRegistry = new Map;
+
+  class EventSource extends EventTarget {
+    static CONNECTING = 0;
+    static OPEN = 1;
+    static CLOSED = 2;
+    CONNECTING = 0;
+    OPEN = 1;
+    CLOSED = 2;
+    url;
+    withCredentials = false;
+    readyState = 0;
+    onopen = null;
+    onmessage = null;
+    onerror = null;
+    #taskPid = null;
+    #id;
+    #lastEventId = "";
+    constructor(url) {
+      super();
+      this.url = url;
+      this.#id = String(Math.random()).slice(2);
+      eventSourceRegistry.set(this.#id, this);
+      this.#taskPid = beam.callSync("__eventsource_open", url, this.#id);
+    }
+    get lastEventId() {
+      return this.#lastEventId;
+    }
+    close() {
+      if (this.readyState === 2)
+        return;
+      this.readyState = 2;
+      eventSourceRegistry.delete(this.#id);
+      if (this.#taskPid) {
+        beam.call("__eventsource_close", this.#taskPid);
+      }
+    }
+    _onOpen() {
+      this.readyState = 1;
+      const event = new Event("open");
+      this.dispatchEvent(event);
+      this.onopen?.(event);
+    }
+    _onEvent(type, data, id) {
+      if (id !== null)
+        this.#lastEventId = id;
+      const event = new MessageEvent(type, { data, lastEventId: this.#lastEventId });
+      this.dispatchEvent(event);
+      if (type === "message") {
+        this.onmessage?.(event);
+      }
+    }
+    _onError(reason) {
+      this.readyState = 2;
+      const event = new ErrorEvent("error", { message: reason });
+      this.dispatchEvent(event);
+      this.onerror?.(event);
+    }
+  }
+  __qb_register_dispatcher((msg) => {
+    if (!Array.isArray(msg))
+      return false;
+    const [type, id, ...rest] = msg;
+    if (typeof id !== "string")
+      return false;
+    const source = eventSourceRegistry.get(id);
+    if (!source)
+      return false;
+    if (type === "__eventsource_open") {
+      source._onOpen();
+      return true;
+    }
+    if (type === "__eventsource_event") {
+      const [eventType, data, eventId] = rest;
+      source._onEvent(eventType, data, eventId);
+      return true;
+    }
+    if (type === "__eventsource_error") {
+      source._onError(rest[0]);
+      return true;
+    }
+    return false;
+  });
 
   // priv/ts/headers.ts
   class Headers {
@@ -857,21 +963,16 @@
     signal;
     redirect;
     constructor(input, init) {
-      if (input instanceof Request) {
-        this.url = input.url;
-        this.method = (init?.method ?? input.method).toUpperCase();
-        this.headers = new Headers(init?.headers ?? input.headers);
-        this.body = init?.body !== undefined ? init.body : input.body;
-        this.signal = init?.signal ?? input.signal;
-        this.redirect = init?.redirect ?? input.redirect;
-      } else {
-        this.url = input;
-        this.method = (init?.method ?? "GET").toUpperCase();
-        this.headers = new Headers(init?.headers);
-        this.body = init?.body ?? null;
-        this.signal = init?.signal ?? new AbortSignal;
-        this.redirect = init?.redirect ?? "follow";
-      }
+      const isClone = input instanceof Request;
+      this.url = isClone ? input.url : input;
+      this.method = (init?.method ?? (isClone ? input.method : "GET")).toUpperCase();
+      this.headers = new Headers(init?.headers ?? (isClone ? input.headers : undefined));
+      if (init?.body !== undefined)
+        this.body = init.body;
+      else
+        this.body = isClone ? input.body : null;
+      this.signal = init?.signal ?? (isClone ? input.signal : new AbortSignal);
+      this.redirect = init?.redirect ?? (isClone ? input.redirect : "follow");
     }
     clone() {
       return new Request(this);
@@ -1005,58 +1106,41 @@
     });
   }
 
-  // priv/ts/broadcast-channel.ts
-  var SYM_RECEIVE = Symbol("receive");
-  var channelRegistry = new Map;
-
-  class BroadcastChannel extends EventTarget {
-    name;
-    #closed = false;
-    onmessage = null;
-    onmessageerror = null;
-    constructor(name) {
-      super();
-      this.name = name;
-      let set = channelRegistry.get(name);
-      if (!set) {
-        set = new Set;
-        channelRegistry.set(name, set);
-      }
-      set.add(this);
-      beam.callSync("__broadcast_join", name);
-    }
-    postMessage(message) {
-      if (this.#closed)
-        throw new DOMException("BroadcastChannel is closed", "InvalidStateError");
-      beam.call("__broadcast_post", this.name, structuredClone(message));
-    }
-    close() {
-      if (this.#closed)
-        return;
-      this.#closed = true;
-      const set = channelRegistry.get(this.name);
-      if (set) {
-        set.delete(this);
-        if (set.size === 0)
-          channelRegistry.delete(this.name);
-      }
-      beam.callSync("__broadcast_leave", this.name);
-    }
-    [SYM_RECEIVE](data) {
-      if (this.#closed)
-        return;
-      const event = new MessageEvent("message", { data });
-      this.onmessage?.(event);
-      this.dispatchEvent(event);
+  // priv/ts/text-streams.ts
+  class TextEncoderStream extends TransformStream {
+    encoding = "utf-8";
+    constructor() {
+      const encoder = new TextEncoder;
+      super({
+        transform(chunk, controller) {
+          controller.enqueue(encoder.encode(chunk));
+        }
+      });
     }
   }
-  globalThis.__qb_broadcast_dispatch = (channel, data) => {
-    const set = channelRegistry.get(channel);
-    if (!set)
-      return;
-    for (const ch of set)
-      ch[SYM_RECEIVE](data);
-  };
+
+  class TextDecoderStream extends TransformStream {
+    encoding;
+    fatal;
+    ignoreBOM;
+    constructor(label = "utf-8", options) {
+      const decoder = new TextDecoder(label, options);
+      super({
+        transform(chunk, controller) {
+          const input = chunk instanceof ArrayBuffer ? new Uint8Array(chunk) : chunk;
+          controller.enqueue(decoder.decode(input, { stream: true }));
+        },
+        flush(controller) {
+          const final = decoder.decode();
+          if (final)
+            controller.enqueue(final);
+        }
+      });
+      this.encoding = decoder.encoding;
+      this.fatal = decoder.fatal;
+      this.ignoreBOM = decoder.ignoreBOM;
+    }
+  }
 
   // priv/ts/websocket.ts
   var SYM_HANDLE_EVENT = Symbol("handleEvent");
@@ -1084,7 +1168,11 @@
     constructor(url, protocols) {
       super();
       this.url = url;
-      const protoArray = protocols === undefined ? [] : typeof protocols === "string" ? [protocols] : protocols;
+      let protoArray = [];
+      if (typeof protocols === "string")
+        protoArray = [protocols];
+      else if (protocols)
+        protoArray = protocols;
       this.#id = beam.callSync("__ws_connect", url, protoArray);
     }
     get readyState() {
@@ -1246,91 +1334,6 @@
     return true;
   });
 
-  // priv/ts/event-source.ts
-  var eventSourceRegistry = new Map;
-
-  class EventSource extends EventTarget {
-    static CONNECTING = 0;
-    static OPEN = 1;
-    static CLOSED = 2;
-    CONNECTING = 0;
-    OPEN = 1;
-    CLOSED = 2;
-    url;
-    withCredentials = false;
-    readyState = 0;
-    onopen = null;
-    onmessage = null;
-    onerror = null;
-    #taskPid = null;
-    #id;
-    #lastEventId = "";
-    constructor(url) {
-      super();
-      this.url = url;
-      this.#id = String(Math.random()).slice(2);
-      eventSourceRegistry.set(this.#id, this);
-      this.#taskPid = beam.callSync("__eventsource_open", url, this.#id);
-    }
-    get lastEventId() {
-      return this.#lastEventId;
-    }
-    close() {
-      if (this.readyState === 2)
-        return;
-      this.readyState = 2;
-      eventSourceRegistry.delete(this.#id);
-      if (this.#taskPid) {
-        beam.call("__eventsource_close", this.#taskPid);
-      }
-    }
-    _onOpen() {
-      this.readyState = 1;
-      const event = new Event("open");
-      this.dispatchEvent(event);
-      this.onopen?.(event);
-    }
-    _onEvent(type, data, id) {
-      if (id !== null && id !== undefined)
-        this.#lastEventId = id;
-      const event = new MessageEvent(type, { data, lastEventId: this.#lastEventId });
-      this.dispatchEvent(event);
-      if (type === "message") {
-        this.onmessage?.(event);
-      }
-    }
-    _onError(reason) {
-      this.readyState = 2;
-      const event = new ErrorEvent("error", { message: reason });
-      this.dispatchEvent(event);
-      this.onerror?.(event);
-    }
-  }
-  __qb_register_dispatcher((msg) => {
-    if (!Array.isArray(msg))
-      return false;
-    const [type, id, ...rest] = msg;
-    if (typeof id !== "string")
-      return false;
-    const source = eventSourceRegistry.get(id);
-    if (!source)
-      return false;
-    if (type === "__eventsource_open") {
-      source._onOpen();
-      return true;
-    }
-    if (type === "__eventsource_event") {
-      const [eventType, data, eventId] = rest;
-      source._onEvent(eventType, data, eventId);
-      return true;
-    }
-    if (type === "__eventsource_error") {
-      source._onError(rest[0]);
-      return true;
-    }
-    return false;
-  });
-
   // priv/ts/console-ext.ts
   var timers = new Map;
   var counters = new Map;
@@ -1400,6 +1403,8 @@
         callback = callbackOrOptions;
       } else {
         options = callbackOrOptions;
+        if (!maybeCallback)
+          throw new TypeError("callback is required");
         callback = maybeCallback;
       }
       const mode = options.mode ?? "exclusive";

@@ -1,9 +1,9 @@
 export class DOMException extends Error {
-  readonly code: number;
+  readonly code: number
 
-  constructor(message = "", name = "Error") {
-    super(message);
-    this.name = name;
-    this.code = 0;
+  constructor(message = '', name = 'Error') {
+    super(message)
+    this.name = name
+    this.code = 0
   }
 }

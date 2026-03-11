@@ -188,7 +188,10 @@
     }
     set search(v) {
       const s = String(v);
-      this.#components.search = s === "" ? "" : s.startsWith("?") ? s : "?" + s;
+      if (s === "")
+        this.#components.search = "";
+      else
+        this.#components.search = s.startsWith("?") ? s : `?${s}`;
       this.#searchParams = new QBURLSearchParams(this.#components.search);
       this.#searchParams._url = this;
       this.#recompose();
@@ -198,7 +201,10 @@
     }
     set hash(v) {
       const s = String(v);
-      this.#components.hash = s === "" ? "" : s.startsWith("#") ? s : "#" + s;
+      if (s === "")
+        this.#components.hash = "";
+      else
+        this.#components.hash = s.startsWith("#") ? s : `#${s}`;
       this.#recompose();
     }
     get searchParams() {

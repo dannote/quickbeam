@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["typescript", "unicorn"],
+  "plugins": ["typescript", "import", "unicorn"],
   "env": {
     "es2024": true
   },
@@ -8,7 +8,7 @@
     "no-unused-vars": "warn",
     "no-console": "off",
     "no-empty-function": "error",
-    "max-lines": ["warn", { "max": 350 }],
+    "max-lines": ["warn", { "max": 500 }],
     "complexity": ["error", { "max": 20 }],
     "eqeqeq": ["error", "always"],
     "no-var": "error",
@@ -16,7 +16,10 @@
 
     "typescript/no-explicit-any": "warn",
     "typescript/no-non-null-assertion": "warn",
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error",
     "typescript/consistent-type-imports": "error",
+    "typescript/consistent-return": "error",
     "typescript/no-unnecessary-condition": "error",
     "typescript/no-unnecessary-type-assertion": "error",
     "typescript/no-unnecessary-type-parameters": "error",
@@ -25,6 +28,11 @@
     "typescript/no-unnecessary-type-arguments": "error",
     "typescript/prefer-optional-chain": "error",
     "typescript/prefer-for-of": "error",
+
+    "import/no-cycle": "error",
+    "import/no-self-import": "error",
+    "import/no-duplicates": "error",
+    "import/no-mutable-exports": "error",
 
     "unicorn/no-instanceof-array": "error",
     "unicorn/no-typeof-undefined": "error",
@@ -41,6 +49,12 @@
       "rules": {
         "no-unused-vars": "off",
         "typescript/no-explicit-any": "off"
+      }
+    },
+    {
+      "files": ["priv/ts/buffer.ts"],
+      "rules": {
+        "max-lines": "off"
       }
     }
   ],
