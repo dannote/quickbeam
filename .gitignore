@@ -31,7 +31,8 @@ test/wpt_reference/
 fuzz/.zig-cache/
 fuzz/zig-out/
 
-# JS toolchain
+# JS dev tooling
 node_modules/
+bun.lock
 # Git worktrees for parallel agent work
 .worktrees/

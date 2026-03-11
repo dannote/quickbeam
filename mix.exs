@@ -3,6 +3,8 @@ defmodule QuickBEAM.MixProject do
 
   @version "0.1.0"
 
+  @source_url "https://github.com/dannote/quickbeam"
+
   def project do
     [
       app: :quickbeam,
@@ -11,7 +13,14 @@ defmodule QuickBEAM.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       aliases: aliases(),
-      dialyzer: [plt_add_apps: [:crypto, :inets, :ssl, :public_key]]
+      dialyzer: [plt_add_apps: [:crypto, :inets, :ssl, :public_key]],
+      name: "QuickBEAM",
+      description:
+        "JavaScript runtime for the BEAM — Web APIs backed by OTP, native DOM, and a built-in TypeScript toolchain.",
+      source_url: @source_url,
+      homepage_url: @source_url,
+      package: package(),
+      docs: docs()
     ]
   end
 
@@ -29,7 +38,7 @@ defmodule QuickBEAM.MixProject do
         "credo --strict",
         "ex_dna",
         "cmd zlint lib/quickbeam/*.zig",
-        "cmd bun run check",
+        "cmd bun run lint",
         "cmd bunx jscpd lib/quickbeam/*.zig priv/ts/*.ts --min-tokens 50 --threshold 0"
       ],
       "fuzz.sanity": "cmd --cd fuzz zig build test"
@@ -47,7 +56,30 @@ defmodule QuickBEAM.MixProject do
       {:nimble_pool, "~> 1.1"},
       {:bandit, "~> 1.0", only: :test},
       {:benchee, "~> 1.3", only: :bench, runtime: false},
-      {:quickjs_ex, "~> 0.3.1", only: :bench, runtime: false}
+      {:quickjs_ex, "~> 0.3.1", only: :bench, runtime: false},
+      {:ex_doc, "~> 0.35", only: :dev, runtime: false}
+    ]
+  end
+
+  defp package do
+    [
+      licenses: ["MIT"],
+      links: %{
+        "GitHub" => @source_url
+      },
+      files: ~w[
+        lib priv/c_src priv/ts
+        mix.exs README.md LICENSE CHANGELOG.md
+        .formatter.exs
+      ]
+    ]
+  end
+
+  defp docs do
+    [
+      main: "QuickBEAM",
+      extras: ["README.md", "CHANGELOG.md"],
+      source_ref: "v#{@version}"
     ]
   end
 end

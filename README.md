@@ -1,6 +1,7 @@
 # QuickBEAM
 
-QuickJS-NG JavaScript engine embedded in the BEAM via Zig NIFs.
+JavaScript runtime for the BEAM — Web APIs backed by OTP, native DOM,
+and a built-in TypeScript toolchain.
 
 JS runtimes are GenServers. They live in supervision trees, send and
 receive messages, and call into Erlang/OTP libraries — all without
@@ -141,18 +142,30 @@ Standard browser APIs backed by BEAM primitives, not JS polyfills:
 
 | JS API | BEAM backend |
 |---|---|
-| `fetch` | `:httpc` |
-| `document`, `querySelector` | lexbor (native C DOM) |
+| `fetch`, `Request`, `Response`, `Headers` | `:httpc` |
+| `document`, `querySelector`, `createElement` | lexbor (native C DOM) |
 | `URL`, `URLSearchParams` | `:uri_string` |
-| `Buffer` | `Base`, `:unicode` |
+| `EventSource` (SSE) | `:httpc` streaming |
+| `WebSocket` | `:gun` |
+| `Worker` | BEAM process per worker |
+| `BroadcastChannel` | `:pg` (distributed) |
+| `navigator.locks` | GenServer + monitors |
+| `localStorage` | ETS |
 | `crypto.subtle` | `:crypto` |
-| `compression.compress/decompress` | `:zlib` |
+| `crypto.getRandomValues`, `randomUUID` | Zig `std.crypto.random` |
+| `ReadableStream`, `WritableStream`, `TransformStream` | Pure TS with `pipeThrough`/`pipeTo` |
 | `TextEncoder`, `TextDecoder` | Native Zig (UTF-8) |
-| `crypto.getRandomValues` | `std.crypto.random` |
-| `atob`, `btoa` | Native Zig |
+| `TextEncoderStream`, `TextDecoderStream` | Stream + Zig encoding |
+| `CompressionStream`, `DecompressionStream` | `:zlib` |
+| `Buffer` | `Base`, `:unicode` |
+| `EventTarget`, `Event`, `CustomEvent` | Pure TS |
+| `AbortController`, `AbortSignal` | Pure TS |
+| `Blob`, `File` | Pure TS |
+| `DOMException` | Pure TS |
 | `setTimeout`, `setInterval` | Timer heap in worker thread |
-| `console.log/warn/error` | Erlang logger |
-| `performance.now` | `std.time.nanoTimestamp` |
+| `console` (log, warn, error, debug, time, group, …) | Erlang Logger |
+| `atob`, `btoa` | Native Zig |
+| `performance.now` | Nanosecond precision |
 | `structuredClone` | QuickJS serialization |
 | `queueMicrotask` | `JS_EnqueueJob` |
 
@@ -190,6 +203,29 @@ Type definitions for the BEAM-specific JS API:
 
 The `.d.ts` file covers `beam`, `Process`, `BeamPid`, and `compression`.
 Standard Web APIs are typed by TypeScript's `lib.dom.d.ts`.
+
+## TypeScript toolchain
+
+QuickBEAM includes a built-in TypeScript toolchain via [OXC](https://oxc.rs)
+Rust NIFs — no Node.js or Bun required:
+
+```elixir
+# Evaluate TypeScript directly
+{:ok, rt} = QuickBEAM.start()
+QuickBEAM.eval_ts(rt, "const x: number = 40 + 2; x")
+# => {:ok, 42}
+
+# Transform, minify, bundle — available as QuickBEAM.JS.*
+{:ok, js} = QuickBEAM.JS.transform("const x: number = 1", "file.ts")
+{:ok, min} = QuickBEAM.JS.minify("const x = 1 + 2;", "file.js")
+
+# Bundle multiple modules into a single IIFE
+files = [
+  {"utils.ts", "export function add(a: number, b: number) { return a + b }"},
+  {"main.ts", "import { add } from './utils'\nconsole.log(add(1, 2))"}
+]
+{:ok, bundle} = QuickBEAM.JS.bundle(files)
+```
 
 ## Performance
 
