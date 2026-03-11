@@ -130,7 +130,9 @@ defmodule QuickBEAM.Runtime do
     "__storage_remove" => &QuickBEAM.Storage.remove_item/1,
     "__storage_clear" => &QuickBEAM.Storage.clear/1,
     "__storage_key" => &QuickBEAM.Storage.key/1,
-    "__storage_length" => &QuickBEAM.Storage.length/1
+    "__storage_length" => &QuickBEAM.Storage.length/1,
+    "__eventsource_open" => {:with_caller, &QuickBEAM.EventSource.open/2},
+    "__eventsource_close" => &QuickBEAM.EventSource.close/1
   }
 
   @priv_js_dir Path.join([__DIR__, "../../priv/js"]) |> Path.expand()
@@ -421,6 +423,28 @@ defmodule QuickBEAM.Runtime do
       if is_struct(error), do: Map.get(error, :message, "Worker error"), else: "Worker error"
 
     QuickBEAM.Native.send_message(state.resource, ["__worker_err", child_pid, message])
+    {:noreply, state}
+  end
+
+  def handle_info({:eventsource_open, id}, state) do
+    QuickBEAM.Native.send_message(state.resource, ["__eventsource_open", id])
+    {:noreply, state}
+  end
+
+  def handle_info({:eventsource_event, id, event}, state) do
+    QuickBEAM.Native.send_message(state.resource, [
+      "__eventsource_event",
+      id,
+      event.type,
+      event.data,
+      event.id
+    ])
+
+    {:noreply, state}
+  end
+
+  def handle_info({:eventsource_error, id, reason}, state) do
+    QuickBEAM.Native.send_message(state.resource, ["__eventsource_error", id, reason])
     {:noreply, state}
   end
 

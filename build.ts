@@ -17,6 +17,7 @@ const bundledModules = new Set([
   "worker.ts",
   "locks.ts",
   "storage.ts",
+  "event-source.ts",
 ]);
 
 const files = await readdir(srcDir);

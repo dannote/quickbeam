@@ -1415,4 +1415,90 @@
     }
   }
   globalThis.localStorage = new QBStorage;
+
+  // priv/ts/event-source.ts
+  var eventSourceRegistry = new Map;
+
+  class QBEventSource extends EventTarget {
+    static CONNECTING = 0;
+    static OPEN = 1;
+    static CLOSED = 2;
+    CONNECTING = 0;
+    OPEN = 1;
+    CLOSED = 2;
+    url;
+    withCredentials = false;
+    readyState = 0;
+    onopen = null;
+    onmessage = null;
+    onerror = null;
+    #taskPid = null;
+    #id;
+    #lastEventId = "";
+    constructor(url) {
+      super();
+      this.url = url;
+      this.#id = String(Math.random()).slice(2);
+      eventSourceRegistry.set(this.#id, this);
+      this.#taskPid = beam.callSync("__eventsource_open", url, this.#id);
+    }
+    get lastEventId() {
+      return this.#lastEventId;
+    }
+    close() {
+      if (this.readyState === 2)
+        return;
+      this.readyState = 2;
+      eventSourceRegistry.delete(this.#id);
+      if (this.#taskPid) {
+        beam.call("__eventsource_close", this.#taskPid);
+      }
+    }
+    _onOpen() {
+      this.readyState = 1;
+      const event = new Event("open");
+      this.dispatchEvent(event);
+      this.onopen?.(event);
+    }
+    _onEvent(type, data, id) {
+      if (id !== null && id !== undefined)
+        this.#lastEventId = id;
+      const event = new MessageEvent(type, { data, lastEventId: this.#lastEventId });
+      this.dispatchEvent(event);
+      if (type === "message") {
+        this.onmessage?.(event);
+      }
+    }
+    _onError(reason) {
+      this.readyState = 2;
+      const event = new ErrorEvent("error", { message: reason });
+      this.dispatchEvent(event);
+      this.onerror?.(event);
+    }
+  }
+  __qb_register_dispatcher((msg) => {
+    if (!Array.isArray(msg))
+      return false;
+    const [type, id, ...rest] = msg;
+    if (typeof id !== "string")
+      return false;
+    const source = eventSourceRegistry.get(id);
+    if (!source)
+      return false;
+    if (type === "__eventsource_open") {
+      source._onOpen();
+      return true;
+    }
+    if (type === "__eventsource_event") {
+      const [eventType, data, eventId] = rest;
+      source._onEvent(eventType, data, eventId);
+      return true;
+    }
+    if (type === "__eventsource_error") {
+      source._onError(rest[0]);
+      return true;
+    }
+    return false;
+  });
+  globalThis.EventSource = QBEventSource;
 })();

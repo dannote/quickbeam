@@ -10,3 +10,4 @@ import "./console-ext";
 import "./worker";
 import "./locks";
 import "./storage";
+import "./event-source";
