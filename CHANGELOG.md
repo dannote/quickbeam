@@ -6,10 +6,14 @@
 
 - Add atom cache for QuickJS↔BEAM boundary — pre-created JS strings for common atoms (`nil`, `true`, `false`, `NaN`, `Infinity`, `ok`, `error`, etc.) avoid repeated allocations on every conversion
 - Replace promise polling with direct `JS_PromiseState`/`JS_PromiseResult` inspection — removes temporary globals, eval overhead, and a per-iteration string leak
+- Lazy proxy objects for BEAM→JS map conversion — maps with >4 entries are wrapped in a `BeamMapProxy` backed by the original BEAM term, converting properties only on access
+- Zero-copy string optimizations — map key conversion uses `JS_NewAtomLen`/`JS_AtomToCStringLen` directly, removing intermediate allocations, stack buffer copies, and the 256-byte key length limit
+- Worker `postMessage` uses direct `beam.send` instead of routing through `beam.call` handlers
 
 ### Fixes
 
 - Fix locks and BroadcastChannel tests failing when application is not started
+- Fix test suite hanging under parallel execution due to missing `:telemetry` dependency
 
 ## 0.1.0
 
