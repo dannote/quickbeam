@@ -88,6 +88,11 @@ defmodule QuickBEAM.Runtime do
     GenServer.call(server, {:load_module, name, code}, :infinity)
   end
 
+  @spec load_addon(GenServer.server(), String.t()) :: {:ok, term()} | {:error, term()}
+  def load_addon(server, path) when is_binary(path) do
+    GenServer.call(server, {:load_addon, path}, :infinity)
+  end
+
   @spec reset(GenServer.server()) :: :ok | {:error, String.t()}
   def reset(server) do
     GenServer.call(server, :reset, :infinity)
@@ -488,6 +493,11 @@ defmodule QuickBEAM.Runtime do
     end
 
     {:noreply, put_pending(state, ref, from, transform)}
+  end
+
+  def handle_call({:load_addon, path}, from, state) do
+    ref = QuickBEAM.Native.load_addon(state.resource, path)
+    {:noreply, put_pending(state, ref, from)}
   end
 
   def handle_call({:load_module, name, code}, from, state) do

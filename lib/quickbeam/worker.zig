@@ -49,6 +49,7 @@ pub const WorkerState = struct {
     builtin_snapshot: ?std.StringHashMap(void) = null,
     buf: [4096]u8 = @splat(0),
     drain_fn: ?DrainFn = null,
+    napi_env: ?*napi_mod.NapiEnv = null,
 
     pub fn deinit(self: *WorkerState) void {
         var call_it = self.pending_calls.valueIterator();
@@ -72,6 +73,12 @@ pub const WorkerState = struct {
             var kit = snap.keyIterator();
             while (kit.next()) |k| types.gpa.free(k.*);
             snap.deinit();
+        }
+
+        if (self.napi_env) |nenv| {
+            nenv.deinit();
+            gpa.destroy(nenv);
+            self.napi_env = null;
         }
 
         self.atoms.deinit(self.ctx);
@@ -633,6 +640,79 @@ pub const WorkerState = struct {
         };
     }
 
+    pub fn do_load_addon(self: *WorkerState, path: [:0]const u8, result: *Result) void {
+        // Create or reuse the NapiEnv for this worker
+        if (self.napi_env == null) {
+            self.napi_env = napi_mod.createEnv(self.ctx, self.rt);
+        }
+        const env = self.napi_env.?;
+
+        // Clear any pending module from a previous call
+        napi_mod.clearPendingModule();
+
+        // dlopen the .node file — store on heap to keep it alive
+        const lib = gpa.create(std.DynLib) catch {
+            result.ok = false;
+            result.json = "OOM";
+            return;
+        };
+        lib.* = std.DynLib.openZ(path) catch {
+            gpa.destroy(lib);
+            result.ok = false;
+            result.json = "Failed to dlopen addon";
+            return;
+        };
+
+        const exports = qjs.JS_NewObject(self.ctx);
+        const exports_slot = gpa.create(qjs.JSValue) catch {
+            qjs.JS_FreeValue(self.ctx, exports);
+            result.ok = false;
+            result.json = "OOM";
+            return;
+        };
+        exports_slot.* = exports;
+        defer gpa.destroy(exports_slot);
+
+        var final_exports: qjs.JSValue = exports;
+
+        // Check if napi_module_register was called during dlopen (static constructor)
+        if (napi_mod.getPendingModule()) |mod| {
+            napi_mod.clearPendingModule();
+            if (mod.nm_register_func) |register| {
+                const ret_val = register(env, exports_slot);
+                self.drain_jobs();
+                if (ret_val) |rv| final_exports = rv.*;
+            }
+        } else {
+            // Try looking up napi_register_module_v1
+            if (lib.lookup(*const fn (napi_mod.napi_env, napi_mod.napi_value) callconv(.c) napi_mod.napi_value, "napi_register_module_v1")) |init_fn| {
+                const ret_val = init_fn(env, exports_slot);
+                self.drain_jobs();
+                if (ret_val) |rv| final_exports = rv.*;
+            } else {
+                qjs.JS_FreeValue(self.ctx, exports);
+                result.ok = false;
+                result.json = "Addon has no napi_module_register or napi_register_module_v1";
+                return;
+            }
+        }
+
+        const result_env = beam.alloc_env();
+        result.ok = true;
+        result.term = js_to_beam.convert_with_limits(self.ctx, final_exports, result_env, self.convert_limits());
+        result.env = result_env;
+
+        // Free exports — the convert_with_limits already read all the data
+        qjs.JS_FreeValue(self.ctx, exports);
+        if (final_exports.tag != exports.tag or qjs.JS_VALUE_GET_PTR(final_exports) != qjs.JS_VALUE_GET_PTR(exports)) {
+            qjs.JS_FreeValue(self.ctx, final_exports);
+        }
+
+        // Drain any leaked napi_value slots created during init (no scope was open)
+        // These are standalone DupValue'd slots that need cleanup
+        env.clearPendingException();
+    }
+
     pub fn do_dom_op_result(self: *WorkerState, op: types.DomOp, selector: []const u8, attr_name: []const u8, result: *Result) void {
         const dd = self.dom_data orelse {
             result.ok = false;
@@ -795,6 +875,12 @@ pub fn worker_main(rd: *types.RuntimeData, owner_pid: beam.pid) void {
                         .array_count = usage.array_count,
                     }, .{ .env = renv });
                     types.send_reply(mu.caller_pid, mu.ref_env, mu.ref_term, true, renv, result_term.v, "");
+                },
+                .load_addon => |p| {
+                    var result = Result{};
+                    state.do_load_addon(p.path, &result);
+                    gpa.free(p.path);
+                    types.send_reply(p.caller_pid, p.ref_env, p.ref_term, result.ok, result.env, result.term, result.json);
                 },
                 .stop => break,
             }

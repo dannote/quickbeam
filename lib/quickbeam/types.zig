@@ -50,6 +50,7 @@ pub const Message = union(enum) {
     list_globals: ListGlobalsPayload,
     memory_usage: AsyncMemoryPayload,
     dom_op: AsyncDomPayload,
+    load_addon: AsyncAddonPayload,
     stop,
 };
 
@@ -127,6 +128,13 @@ pub const SetGlobalPayload = struct {
 
 pub const GetGlobalPayload = struct {
     name: [:0]const u8,
+    caller_pid: beam.pid,
+    ref_env: ?*e.ErlNifEnv,
+    ref_term: e.ErlNifTerm,
+};
+
+pub const AsyncAddonPayload = struct {
+    path: [:0]const u8,
     caller_pid: beam.pid,
     ref_env: ?*e.ErlNifEnv,
     ref_term: e.ErlNifTerm,

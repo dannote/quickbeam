@@ -231,6 +231,27 @@ pub fn reset_runtime(resource: RuntimeResource) beam.term {
     return beam.term{ .v = e.enif_make_copy(env, ref_term) };
 }
 
+pub fn load_addon(resource: RuntimeResource, path: []const u8) beam.term {
+    const data = resource.unpack();
+    const env = beam.context.env orelse return beam.make(.{ .@"error", "no env" }, .{});
+
+    var caller_pid: beam.pid = undefined;
+    _ = e.enif_self(env, &caller_pid);
+    const ref_env = beam.alloc_env();
+    const ref_term = e.enif_make_ref(ref_env);
+
+    const path_copy = gpa.dupeZ(u8, path) catch return beam.make(.{ .@"error", "OOM" }, .{});
+
+    enqueue(data, .{ .load_addon = .{
+        .path = path_copy,
+        .caller_pid = caller_pid,
+        .ref_env = ref_env,
+        .ref_term = ref_term,
+    } });
+
+    return beam.term{ .v = e.enif_make_copy(env, ref_term) };
+}
+
 pub fn stop_runtime(resource: RuntimeResource) beam.term {
     const data = resource.unpack();
 

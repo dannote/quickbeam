@@ -225,6 +225,20 @@ defmodule QuickBEAM do
   end
 
   @doc """
+  Load a native addon (.node file) via N-API.
+
+  The addon is loaded with `dlopen` and its `napi_register_module_v1` (or
+  `napi_module_register`) entry point is called. Returns the addon's exports
+  as an Elixir term.
+
+      QuickBEAM.load_addon(rt, "/path/to/addon.node")
+  """
+  @spec load_addon(runtime(), String.t()) :: {:ok, term()} | {:error, term()}
+  def load_addon(runtime, path) do
+    QuickBEAM.Runtime.load_addon(runtime, path)
+  end
+
+  @doc """
   Reset the runtime to a fresh JS context. Clears all state and functions.
 
       iex> {:ok, rt} = QuickBEAM.start()

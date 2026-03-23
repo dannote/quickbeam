@@ -152,6 +152,7 @@ pub const NapiEnv = struct {
     instance_data_finalize: napi_finalize = null,
     instance_data_hint: ?*anyopaque = null,
     scope_stack: std.ArrayListUnmanaged(*HandleScope) = .{},
+    persistent_values: std.ArrayListUnmanaged(qjs.JSValue) = .{},
 
     pub fn setLastError(self: *NapiEnv, status: Status) napi_status {
         self.last_error.error_code = @intFromEnum(status);
@@ -193,10 +194,10 @@ pub const NapiEnv = struct {
             const scope = self.scope_stack.items[self.scope_stack.items.len - 1];
             return scope.track(self.ctx, val);
         }
-        // No scope open — allocate a standalone slot (caller must manage)
-        const slot = gpa.create(qjs.JSValue) catch return null;
-        slot.* = qjs.JS_DupValue(self.ctx, val);
-        return slot;
+        // No scope open — store in the persistent values list.
+        // These values are DupValue'd to prevent GC and freed when the env is destroyed.
+        self.persistent_values.append(gpa, qjs.JS_DupValue(self.ctx, val)) catch return null;
+        return &self.persistent_values.items[self.persistent_values.items.len - 1];
     }
 
     pub fn deinit(self: *NapiEnv) void {
@@ -206,6 +207,10 @@ pub const NapiEnv = struct {
             gpa.destroy(scope);
         }
         self.scope_stack.deinit(gpa);
+        for (self.persistent_values.items) |v| {
+            qjs.JS_FreeValue(self.ctx, v);
+        }
+        self.persistent_values.deinit(gpa);
     }
 };
 
