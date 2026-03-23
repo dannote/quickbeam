@@ -2,6 +2,7 @@ const types = @import("types.zig");
 const worker = @import("worker.zig");
 const ct = @import("context_types.zig");
 const context_worker = @import("context_worker.zig");
+pub const napi = @import("napi.zig");
 
 const std = types.std;
 const beam = @import("beam");
