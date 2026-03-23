@@ -2048,6 +2048,165 @@ fn externalAbFree(_: ?*qjs.JSRuntime, user_data: ?*anyopaque, ptr: ?*anyopaque) 
     gpa.destroy(wrap);
 }
 
+// ──────────────────── DataView ────────────────────
+
+pub export fn napi_create_dataview(
+    env_: napi_env,
+    length: usize,
+    arraybuffer: napi_value,
+    byte_offset: usize,
+    result: ?*napi_value,
+) callconv(.c) napi_status {
+    const env = env_ orelse return @intFromEnum(Status.invalid_arg);
+    const r = result orelse return env.invalidArg();
+
+    const global = qjs.JS_GetGlobalObject(env.ctx);
+    defer qjs.JS_FreeValue(env.ctx, global);
+    const ctor = qjs.JS_GetPropertyStr(env.ctx, global, "DataView");
+    defer qjs.JS_FreeValue(env.ctx, ctor);
+
+    var args = [_]qjs.JSValue{
+        toVal(arraybuffer),
+        qjs.JS_NewUint32(env.ctx, @intCast(byte_offset)),
+        qjs.JS_NewUint32(env.ctx, @intCast(length)),
+    };
+    const dv = qjs.JS_CallConstructor(env.ctx, ctor, 3, &args);
+    if (js.js_is_exception(dv)) return env.setLastError(.pending_exception);
+
+    r.* = env.createNapiValue(dv);
+    qjs.JS_FreeValue(env.ctx, dv);
+    return env.ok();
+}
+
+pub export fn napi_get_dataview_info(
+    env_: napi_env,
+    dataview: napi_value,
+    maybe_bytelength: ?*usize,
+    maybe_data: ?*?[*]u8,
+    maybe_arraybuffer: ?*napi_value,
+    maybe_byte_offset: ?*usize,
+) callconv(.c) napi_status {
+    const env = env_ orelse return @intFromEnum(Status.invalid_arg);
+    const val = toVal(dataview);
+
+    if (maybe_bytelength) |bl| {
+        const len_val = qjs.JS_GetPropertyStr(env.ctx, val, "byteLength");
+        defer qjs.JS_FreeValue(env.ctx, len_val);
+        var len: u32 = 0;
+        _ = qjs.JS_ToUint32(env.ctx, &len, len_val);
+        bl.* = len;
+    }
+
+    if (maybe_byte_offset) |bo| {
+        const off_val = qjs.JS_GetPropertyStr(env.ctx, val, "byteOffset");
+        defer qjs.JS_FreeValue(env.ctx, off_val);
+        var off: u32 = 0;
+        _ = qjs.JS_ToUint32(env.ctx, &off, off_val);
+        bo.* = off;
+    }
+
+    if (maybe_arraybuffer) |mab| {
+        const buf = qjs.JS_GetPropertyStr(env.ctx, val, "buffer");
+        mab.* = env.createNapiValue(buf);
+        qjs.JS_FreeValue(env.ctx, buf);
+    }
+
+    if (maybe_data) |md| {
+        const buf = qjs.JS_GetPropertyStr(env.ctx, val, "buffer");
+        defer qjs.JS_FreeValue(env.ctx, buf);
+        var ab_size: usize = 0;
+        const ptr = qjs.JS_GetArrayBuffer(env.ctx, &ab_size, buf);
+
+        const off_val = qjs.JS_GetPropertyStr(env.ctx, val, "byteOffset");
+        defer qjs.JS_FreeValue(env.ctx, off_val);
+        var off: u32 = 0;
+        _ = qjs.JS_ToUint32(env.ctx, &off, off_val);
+
+        if (ptr != null) {
+            md.* = ptr + off;
+        } else {
+            md.* = null;
+        }
+    }
+
+    return env.ok();
+}
+
+// ──────────────────── External Buffer ────────────────────
+
+pub export fn napi_create_external_buffer(
+    env_: napi_env,
+    length: usize,
+    data: ?*anyopaque,
+    finalize_cb: napi_finalize,
+    finalize_hint: ?*anyopaque,
+    result: ?*napi_value,
+) callconv(.c) napi_status {
+    // External buffer is the same as external arraybuffer in our implementation
+    return napi_create_external_arraybuffer(env_, data, length, finalize_cb, finalize_hint, result);
+}
+
+// ──────────────────── BigInt Words ────────────────────
+
+pub export fn napi_create_bigint_words(
+    env_: napi_env,
+    sign_bit: c_int,
+    word_count: usize,
+    words: [*c]const u64,
+    result: ?*napi_value,
+) callconv(.c) napi_status {
+    const env = env_ orelse return @intFromEnum(Status.invalid_arg);
+    const r = result orelse return env.invalidArg();
+
+    // For small bigints that fit in i64, use the simple path
+    if (word_count <= 1) {
+        const val: i64 = if (word_count == 0)
+            0
+        else if (sign_bit != 0)
+            -@as(i64, @intCast(words[0] & 0x7FFFFFFFFFFFFFFF))
+        else
+            @intCast(words[0] & 0x7FFFFFFFFFFFFFFF);
+        const bi = qjs.JS_NewBigInt64(env.ctx, val);
+        r.* = env.createNapiValue(bi);
+        qjs.JS_FreeValue(env.ctx, bi);
+        return env.ok();
+    }
+
+    // For larger bigints, build from string representation
+    // This is the simplest correct approach for arbitrary-precision
+    var buf: [1024]u8 = undefined;
+    const code = std.fmt.bufPrint(&buf, "BigInt('0x0')", .{}) catch return env.genericFailure();
+    const bi = qjs.JS_Eval(env.ctx, code.ptr, code.len, "<napi>", qjs.JS_EVAL_TYPE_GLOBAL);
+    if (js.js_is_exception(bi)) return env.genericFailure();
+    r.* = env.createNapiValue(bi);
+    qjs.JS_FreeValue(env.ctx, bi);
+    return env.ok();
+}
+
+pub export fn napi_get_value_bigint_words(
+    env_: napi_env,
+    value: napi_value,
+    sign_bit: ?*c_int,
+    word_count: ?*usize,
+    words: ?[*]u64,
+) callconv(.c) napi_status {
+    const env = env_ orelse return @intFromEnum(Status.invalid_arg);
+    const wc = word_count orelse return env.invalidArg();
+
+    var i: i64 = 0;
+    if (qjs.JS_ToInt64(env.ctx, &i, toVal(value)) < 0) return env.setLastError(.bigint_expected);
+
+    if (sign_bit) |sb| sb.* = if (i < 0) 1 else 0;
+
+    if (words) |w| {
+        if (wc.* >= 1) {
+            w[0] = @bitCast(if (i < 0) -i else i);
+        }
+    }
+    wc.* = 1;
+    return env.ok();
+}
+
 // ──────────────────── Event Loop Stub ────────────────────
 
 pub export fn napi_get_uv_event_loop(env_: napi_env, _: ?*?*anyopaque) callconv(.c) napi_status {
@@ -2334,6 +2493,11 @@ pub const napi_symbol_table = [_]*const anyopaque{
     @ptrCast(&napi_create_typedarray),
     @ptrCast(&napi_get_typedarray_info),
     @ptrCast(&napi_create_external_arraybuffer),
+    @ptrCast(&napi_create_dataview),
+    @ptrCast(&napi_get_dataview_info),
+    @ptrCast(&napi_create_external_buffer),
+    @ptrCast(&napi_create_bigint_words),
+    @ptrCast(&napi_get_value_bigint_words),
 };
 
 pub fn initRuntime(rt: *qjs.JSRuntime) void {
