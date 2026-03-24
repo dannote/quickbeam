@@ -605,6 +605,20 @@ pub const WorkerState = struct {
                             complete(p.work.env, ns, p.work.data);
                         }
                     },
+                    .napi_tsfn_call => |p| {
+                        const tsfn = p.tsfn;
+                        if (tsfn.call_js_cb) |cb| {
+                            const napi_val: napi_mod.napi_value = if (tsfn.callback) |c| blk: {
+                                const slot = gpa.create(qjs.JSValue) catch break :blk null;
+                                slot.* = c;
+                                break :blk slot;
+                            } else null;
+                            cb(tsfn.env, napi_val, tsfn.ctx, p.data);
+                        } else if (tsfn.callback) |cb| {
+                            const ret = qjs.JS_Call(self.ctx, cb, js.js_undefined(), 0, null);
+                            qjs.JS_FreeValue(self.ctx, ret);
+                        }
+                    },
                     .stop => {
                         result.ok = false;
                         result.json = "Runtime stopped";
@@ -894,6 +908,20 @@ pub fn worker_main(rd: *types.RuntimeData, owner_pid: beam.pid) void {
                         else
                             @intFromEnum(nt.Status.ok);
                         complete(work.env, napi_status, work.data);
+                    }
+                },
+                .napi_tsfn_call => |p| {
+                    const tsfn = p.tsfn;
+                    if (tsfn.call_js_cb) |cb| {
+                        const napi_val: napi_mod.napi_value = if (tsfn.callback) |c| blk: {
+                            const slot = gpa.create(qjs.JSValue) catch break :blk null;
+                            slot.* = c;
+                            break :blk slot;
+                        } else null;
+                        cb(tsfn.env, napi_val, tsfn.ctx, p.data);
+                    } else if (tsfn.callback) |cb| {
+                        const ret = qjs.JS_Call(state.ctx, cb, js.js_undefined(), 0, null);
+                        qjs.JS_FreeValue(state.ctx, ret);
                     }
                 },
                 .load_addon => |p| {

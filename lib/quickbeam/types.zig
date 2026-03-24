@@ -52,6 +52,7 @@ pub const Message = union(enum) {
     dom_op: AsyncDomPayload,
     load_addon: AsyncAddonPayload,
     napi_async_complete: NapiAsyncCompletePayload,
+    napi_tsfn_call: NapiTsfnCallPayload,
     stop,
 };
 
@@ -136,6 +137,11 @@ pub const GetGlobalPayload = struct {
 
 pub const NapiAsyncCompletePayload = struct {
     work: *@import("napi_types.zig").AsyncWork,
+};
+
+pub const NapiTsfnCallPayload = struct {
+    tsfn: *@import("napi_types.zig").ThreadSafeFunction,
+    data: ?*anyopaque,
 };
 
 pub const AsyncAddonPayload = struct {

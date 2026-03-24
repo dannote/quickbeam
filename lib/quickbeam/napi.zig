@@ -893,16 +893,12 @@ pub export fn napi_create_function(
     const callback = cb orelse return env.invalidArg();
     _ = length;
 
-    const cbd = gpa.create(FunctionCallbackData) catch return env.genericFailure();
-    cbd.* = .{ .cb = callback, .data = data, .env = env };
+    const cbd = createCallbackData(env, callback, data) orelse return env.genericFailure();
 
     const ptr_as_int: i64 = @bitCast(@intFromPtr(cbd));
     var func_data = [_]qjs.JSValue{qjs.JS_NewInt64(env.ctx, ptr_as_int)};
     const func = qjs.JS_NewCFunctionData(env.ctx, &napiCallbackTrampoline, 0, 0, 1, &func_data);
-    if (js.js_is_exception(func)) {
-        gpa.destroy(cbd);
-        return env.genericFailure();
-    }
+    if (js.js_is_exception(func)) return env.genericFailure();
 
     if (utf8name != null) {
         const name_val = qjs.JS_NewString(env.ctx, utf8name);
@@ -1044,6 +1040,7 @@ pub export fn napi_create_reference(env_: napi_env, value: napi_value, initial_r
         .ref_count = initial_refcount,
         .ctx = env.ctx,
     };
+    env.refs.append(gpa, ref_obj) catch {};
     r.* = ref_obj;
     return env.ok();
 }
@@ -1051,6 +1048,13 @@ pub export fn napi_create_reference(env_: napi_env, value: napi_value, initial_r
 pub export fn napi_delete_reference(env_: napi_env, ref_: napi_ref) callconv(.c) napi_status {
     const env = env_ orelse return @intFromEnum(Status.invalid_arg);
     const ref_obj: *NapiReference = ref_ orelse return env.invalidArg();
+    // Remove from env tracking
+    for (env.refs.items, 0..) |r, i| {
+        if (r == ref_obj) {
+            _ = env.refs.swapRemove(i);
+            break;
+        }
+    }
     ref_obj.deinit();
     return env.ok();
 }
@@ -1683,34 +1687,10 @@ pub export fn napi_define_properties(env_: napi_env, object: napi_value, propert
         if (prop.attributes & nt.NAPI_CONFIGURABLE != 0) flags |= qjs.JS_PROP_CONFIGURABLE;
 
         if (prop.method) |method| {
-            // Create a method
-            const cbd = gpa.create(FunctionCallbackData) catch return env.genericFailure();
-            cbd.* = .{ .cb = method, .data = prop.data, .env = env };
-            const ptr_as_int: i64 = @bitCast(@intFromPtr(cbd));
-            var func_data_arr = [_]qjs.JSValue{qjs.JS_NewInt64(env.ctx, ptr_as_int)};
-            const func = qjs.JS_NewCFunctionData(env.ctx, &napiCallbackTrampoline, 0, 0, 1, &func_data_arr);
-            _ = qjs.JS_DefinePropertyValue(env.ctx, obj, name_atom, func, flags | qjs.JS_PROP_HAS_VALUE);
+            _ = qjs.JS_DefinePropertyValue(env.ctx, obj, name_atom, createJsFunction(env, method, prop.data), flags | qjs.JS_PROP_HAS_VALUE);
         } else if (prop.getter != null or prop.setter != null) {
-            // getter/setter
-            var getter_val = js.js_undefined();
-            var setter_val = js.js_undefined();
-
-            if (prop.getter) |getter| {
-                const cbd = gpa.create(FunctionCallbackData) catch return env.genericFailure();
-                cbd.* = .{ .cb = getter, .data = prop.data, .env = env };
-                const ptr_as_int: i64 = @bitCast(@intFromPtr(cbd));
-                var func_data_arr = [_]qjs.JSValue{qjs.JS_NewInt64(env.ctx, ptr_as_int)};
-                getter_val = qjs.JS_NewCFunctionData(env.ctx, &napiCallbackTrampoline, 0, 0, 1, &func_data_arr);
-            }
-
-            if (prop.setter) |setter| {
-                const cbd = gpa.create(FunctionCallbackData) catch return env.genericFailure();
-                cbd.* = .{ .cb = setter, .data = prop.data, .env = env };
-                const ptr_as_int: i64 = @bitCast(@intFromPtr(cbd));
-                var func_data_arr = [_]qjs.JSValue{qjs.JS_NewInt64(env.ctx, ptr_as_int)};
-                setter_val = qjs.JS_NewCFunctionData(env.ctx, &napiCallbackTrampoline, 0, 0, 1, &func_data_arr);
-            }
-
+            const getter_val = if (prop.getter) |g| createJsFunction(env, g, prop.data) else js.js_undefined();
+            const setter_val = if (prop.setter) |s| createJsFunction(env, s, prop.data) else js.js_undefined();
             _ = qjs.JS_DefinePropertyGetSet(env.ctx, obj, name_atom, getter_val, setter_val, flags | qjs.JS_PROP_HAS_GET | qjs.JS_PROP_HAS_SET);
         } else if (prop.value) |v| {
             _ = qjs.JS_DefinePropertyValue(env.ctx, obj, name_atom, qjs.JS_DupValue(env.ctx, v.*), flags | qjs.JS_PROP_HAS_VALUE);
@@ -1803,15 +1783,8 @@ pub export fn napi_define_class(
     _ = length;
 
     // Create the constructor function
-    const cbd = gpa.create(FunctionCallbackData) catch return env.genericFailure();
-    cbd.* = .{ .cb = ctor_fn, .data = cb_data, .env = env };
-    const ptr_as_int: i64 = @bitCast(@intFromPtr(cbd));
-    var func_data = [_]qjs.JSValue{qjs.JS_NewInt64(env.ctx, ptr_as_int)};
-    const ctor = qjs.JS_NewCFunctionData(env.ctx, &napiCallbackTrampoline, 0, 0, 1, &func_data);
-    if (js.js_is_exception(ctor)) {
-        gpa.destroy(cbd);
-        return env.genericFailure();
-    }
+    const ctor = createJsFunction(env, ctor_fn, cb_data);
+    if (js.js_is_exception(ctor)) return env.genericFailure();
 
     // Mark as constructor
     _ = qjs.JS_SetConstructorBit(env.ctx, ctor, true);
@@ -1847,31 +1820,10 @@ pub export fn napi_define_class(
         if (prop.attributes & nt.NAPI_CONFIGURABLE != 0) flags |= qjs.JS_PROP_CONFIGURABLE;
 
         if (prop.method) |method| {
-            const mcbd = gpa.create(FunctionCallbackData) catch continue;
-            mcbd.* = .{ .cb = method, .data = prop.data, .env = env };
-            const mptr: i64 = @bitCast(@intFromPtr(mcbd));
-            var mfunc_data = [_]qjs.JSValue{qjs.JS_NewInt64(env.ctx, mptr)};
-            const func = qjs.JS_NewCFunctionData(env.ctx, &napiCallbackTrampoline, 0, 0, 1, &mfunc_data);
-            _ = qjs.JS_DefinePropertyValue(env.ctx, target, name_atom, func, flags | qjs.JS_PROP_HAS_VALUE);
+            _ = qjs.JS_DefinePropertyValue(env.ctx, target, name_atom, createJsFunction(env, method, prop.data), flags | qjs.JS_PROP_HAS_VALUE);
         } else if (prop.getter != null or prop.setter != null) {
-            var getter_val = js.js_undefined();
-            var setter_val = js.js_undefined();
-
-            if (prop.getter) |getter| {
-                const gcbd = gpa.create(FunctionCallbackData) catch continue;
-                gcbd.* = .{ .cb = getter, .data = prop.data, .env = env };
-                const gptr: i64 = @bitCast(@intFromPtr(gcbd));
-                var gfunc_data = [_]qjs.JSValue{qjs.JS_NewInt64(env.ctx, gptr)};
-                getter_val = qjs.JS_NewCFunctionData(env.ctx, &napiCallbackTrampoline, 0, 0, 1, &gfunc_data);
-            }
-            if (prop.setter) |setter| {
-                const scbd = gpa.create(FunctionCallbackData) catch continue;
-                scbd.* = .{ .cb = setter, .data = prop.data, .env = env };
-                const sptr: i64 = @bitCast(@intFromPtr(scbd));
-                var sfunc_data = [_]qjs.JSValue{qjs.JS_NewInt64(env.ctx, sptr)};
-                setter_val = qjs.JS_NewCFunctionData(env.ctx, &napiCallbackTrampoline, 0, 0, 1, &sfunc_data);
-            }
-
+            const getter_val = if (prop.getter) |g| createJsFunction(env, g, prop.data) else js.js_undefined();
+            const setter_val = if (prop.setter) |s| createJsFunction(env, s, prop.data) else js.js_undefined();
             _ = qjs.JS_DefinePropertyGetSet(env.ctx, target, name_atom, getter_val, setter_val, flags | qjs.JS_PROP_HAS_GET | qjs.JS_PROP_HAS_SET);
         } else if (prop.value) |v| {
             _ = qjs.JS_DefinePropertyValue(env.ctx, target, name_atom, qjs.JS_DupValue(env.ctx, v.*), flags | qjs.JS_PROP_HAS_VALUE);
@@ -2250,9 +2202,11 @@ pub export fn napi_create_threadsafe_function(
 pub export fn napi_call_threadsafe_function(func_: napi_threadsafe_function, data: ?*anyopaque, is_blocking: nt.napi_threadsafe_function_call_mode) callconv(.c) napi_status {
     const func: *ThreadSafeFunction = func_ orelse return @intFromEnum(Status.invalid_arg);
     func.lock.lock();
-    defer func.lock.unlock();
 
-    if (func.closing.load(.seq_cst)) return @intFromEnum(Status.closing);
+    if (func.closing.load(.seq_cst)) {
+        func.lock.unlock();
+        return @intFromEnum(Status.closing);
+    }
 
     if (is_blocking == nt.napi_tsfn_blocking) {
         while (func.max_queue_size > 0 and func.queue.items.len >= func.max_queue_size) {
@@ -2260,23 +2214,20 @@ pub export fn napi_call_threadsafe_function(func_: napi_threadsafe_function, dat
         }
     } else {
         if (func.max_queue_size > 0 and func.queue.items.len >= func.max_queue_size) {
+            func.lock.unlock();
             return @intFromEnum(Status.queue_full);
         }
     }
 
-    func.queue.append(gpa, data) catch return @intFromEnum(Status.generic_failure);
+    func.queue.append(gpa, data) catch {
+        func.lock.unlock();
+        return @intFromEnum(Status.generic_failure);
+    };
+    func.lock.unlock();
 
-    // Dispatch: call the JS callback or the C callback
-    if (func.call_js_cb) |cb| {
-        const napi_val: napi_value = if (func.callback) |c| blk: {
-            const slot = gpa.create(qjs.JSValue) catch return @intFromEnum(Status.generic_failure);
-            slot.* = c;
-            break :blk slot;
-        } else null;
-        cb(func.env, napi_val, func.ctx, data);
-    } else if (func.callback) |cb| {
-        const ret = qjs.JS_Call(func.env.ctx, cb, js.js_undefined(), 0, null);
-        qjs.JS_FreeValue(func.env.ctx, ret);
+    // Dispatch to the worker thread via the message queue
+    if (func.env.runtime_data) |rd| {
+        types.enqueue(rd, .{ .napi_tsfn_call = .{ .tsfn = func, .data = data } });
     }
 
     return @intFromEnum(Status.ok);
@@ -2317,6 +2268,23 @@ pub export fn napi_get_threadsafe_function_context(func_: napi_threadsafe_functi
 }
 
 // ──────────────────── Helpers ────────────────────
+
+fn createJsFunction(env: *NapiEnv, cb: *const fn (napi_env, napi_callback_info) callconv(.c) napi_value, data: ?*anyopaque) qjs.JSValue {
+    const cbd = createCallbackData(env, cb, data) orelse return js.js_exception();
+    const ptr_as_int: i64 = @bitCast(@intFromPtr(cbd));
+    var func_data_arr = [_]qjs.JSValue{qjs.JS_NewInt64(env.ctx, ptr_as_int)};
+    return qjs.JS_NewCFunctionData(env.ctx, &napiCallbackTrampoline, 0, 0, 1, &func_data_arr);
+}
+
+fn createCallbackData(env: *NapiEnv, cb: *const fn (napi_env, napi_callback_info) callconv(.c) napi_value, data: ?*anyopaque) ?*FunctionCallbackData {
+    const cbd = gpa.create(FunctionCallbackData) catch return null;
+    cbd.* = .{ .cb = cb, .data = data, .env = env };
+    env.callback_data.append(gpa, cbd) catch {
+        gpa.destroy(cbd);
+        return null;
+    };
+    return cbd;
+}
 
 fn napiSpan(ptr: ?[*]const u8, len: usize) ?[]const u8 {
     if (ptr) |p| {

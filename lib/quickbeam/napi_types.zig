@@ -153,7 +153,9 @@ pub const NapiEnv = struct {
     instance_data_finalize: napi_finalize = null,
     instance_data_hint: ?*anyopaque = null,
     scope_stack: std.ArrayListUnmanaged(*HandleScope) = .{},
-    persistent_values: std.ArrayListUnmanaged(qjs.JSValue) = .{},
+    persistent_slots: std.ArrayListUnmanaged(*qjs.JSValue) = .{},
+    refs: std.ArrayListUnmanaged(*NapiReference) = .{},
+    callback_data: std.ArrayListUnmanaged(*FunctionCallbackData) = .{},
 
     pub fn setLastError(self: *NapiEnv, status: Status) napi_status {
         self.last_error.error_code = @intFromEnum(status);
@@ -188,17 +190,22 @@ pub const NapiEnv = struct {
         }
     }
 
-    /// Store a JS value in the current handle scope and return a stable pointer.
-    /// The pointer remains valid until the scope is closed.
+    /// Store a JS value and return a stable pointer for the napi_value ABI.
+    /// With a scope open: tracked in scope, DupValue'd, freed on scope close.
+    /// Without scope: heap-allocated slot, DupValue'd, freed on env deinit.
     pub fn createNapiValue(self: *NapiEnv, val: qjs.JSValue) napi_value {
         if (self.scope_stack.items.len > 0) {
             const scope = self.scope_stack.items[self.scope_stack.items.len - 1];
             return scope.track(self.ctx, val);
         }
-        // No scope open — store in the persistent values list.
-        // These values are DupValue'd to prevent GC and freed when the env is destroyed.
-        self.persistent_values.append(gpa, qjs.JS_DupValue(self.ctx, val)) catch return null;
-        return &self.persistent_values.items[self.persistent_values.items.len - 1];
+        const slot = gpa.create(qjs.JSValue) catch return null;
+        slot.* = qjs.JS_DupValue(self.ctx, val);
+        self.persistent_slots.append(gpa, slot) catch {
+            qjs.JS_FreeValue(self.ctx, slot.*);
+            gpa.destroy(slot);
+            return null;
+        };
+        return slot;
     }
 
     pub fn deinit(self: *NapiEnv) void {
@@ -208,10 +215,19 @@ pub const NapiEnv = struct {
             gpa.destroy(scope);
         }
         self.scope_stack.deinit(gpa);
-        for (self.persistent_values.items) |v| {
-            qjs.JS_FreeValue(self.ctx, v);
+        for (self.persistent_slots.items) |slot| {
+            qjs.JS_FreeValue(self.ctx, slot.*);
+            gpa.destroy(slot);
         }
-        self.persistent_values.deinit(gpa);
+        self.persistent_slots.deinit(gpa);
+        for (self.refs.items) |r| r.deinit();
+        self.refs.deinit(gpa);
+        // Run cycle collector to break circular refs (e.g. constructor ↔ prototype)
+        qjs.JS_RunGC(self.rt);
+        for (self.callback_data.items) |cbd| {
+            gpa.destroy(cbd);
+        }
+        self.callback_data.deinit(gpa);
     }
 };
 
