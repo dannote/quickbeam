@@ -55,6 +55,9 @@ jobs:
           path: node_modules
           key: ${{ runner.os }}-npm-${{ hashFiles('npm.lock') }}
 
+      - name: Install zlint
+        run: curl -fsSL https://raw.githubusercontent.com/DonIsaac/zlint/refs/heads/main/tasks/install.sh | bash
+
       - run: mix deps.get
       - run: mix npm.get
       - run: mix ci

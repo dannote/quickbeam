@@ -675,17 +675,45 @@ pub const WorkerState = struct {
         };
     }
 
+    fn ensureNapiSymbolsGlobal() void {
+        const promoted = struct {
+            var done: bool = false;
+        };
+        if (promoted.done) return;
+        promoted.done = true;
+
+        // On Linux, addons loaded via dlopen need N-API symbols from the NIF
+        // to be globally visible. Re-open our own .so with RTLD_GLOBAL to
+        // promote the exported napi_* symbols into the global symbol table.
+        if (comptime @import("builtin").os.tag == .linux) {
+            const DlInfo = extern struct {
+                dli_fname: [*c]const u8,
+                dli_fbase: ?*anyopaque,
+                dli_sname: [*c]const u8,
+                dli_saddr: ?*anyopaque,
+            };
+            const RTLD_LAZY = 0x00001;
+            const RTLD_GLOBAL = 0x00100;
+            const RTLD_NOLOAD = 0x00004;
+            const dladdr = @extern(*const fn (?*const anyopaque, *DlInfo) callconv(.c) c_int, .{ .name = "dladdr" });
+            const dlopen_fn = @extern(*const fn (?[*:0]const u8, c_int) callconv(.c) ?*anyopaque, .{ .name = "dlopen" });
+            var info: DlInfo = undefined;
+            if (dladdr(@ptrCast(&napi_mod.napi_module_register), &info) != 0) {
+                _ = dlopen_fn(info.dli_fname, RTLD_LAZY | RTLD_GLOBAL | RTLD_NOLOAD);
+            }
+        }
+    }
+
     pub fn do_load_addon(self: *WorkerState, path: [:0]const u8, global_name: ?[:0]const u8, result: *Result) void {
-        // Create or reuse the NapiEnv for this worker
+        ensureNapiSymbolsGlobal();
+
         if (self.napi_env == null) {
             self.napi_env = napi_mod.createEnvWithRd(self.ctx, self.rt, self.rd);
         }
         const env = self.napi_env.?;
 
-        // Clear any pending module from a previous call
         napi_mod.clearPendingModule();
 
-        // dlopen the .node file — store on heap to keep it alive
         const lib = gpa.create(std.DynLib) catch {
             result.ok = false;
             result.json = "OOM";
