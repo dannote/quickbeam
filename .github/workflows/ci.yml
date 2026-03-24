@@ -49,18 +49,13 @@ jobs:
           key: ${{ runner.os }}-mix-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('mix.lock') }}-${{ hashFiles('lib/quickbeam/*.zig') }}
           restore-keys: ${{ runner.os }}-mix-${{ matrix.otp }}-${{ matrix.elixir }}-
 
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-npm-${{ hashFiles('npm.lock') }}
-
       - uses: oven-sh/setup-bun@v2
 
       - name: Install zlint
         run: curl -fsSL https://raw.githubusercontent.com/DonIsaac/zlint/refs/heads/main/tasks/install.sh | bash
 
       - run: mix deps.get
+      - run: npm install
       - run: mix npm.get
       - run: mix ci
 
