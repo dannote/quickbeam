@@ -35,7 +35,7 @@ pub var wrap_class_def = qjs.JSClassDef{
 };
 
 pub fn wrapFinalizer(_: ?*qjs.JSRuntime, val: qjs.JSValue) callconv(.c) void {
-    const holder = @as(?*WrappedPointerHolder, @ptrCast(@alignCast(qjs.JS_GetOpaque(val, wrap_class_id))));
+    const holder: ?*WrappedPointerHolder = @ptrCast(@alignCast(qjs.JS_GetOpaque(val, wrap_class_id)));
     if (holder) |h| {
         const wrap = h.wrap;
         if (!wrap.removed) {
@@ -83,7 +83,7 @@ pub fn getWrapData(env: *NapiEnv, obj: qjs.JSValue) ?*WrapData {
     defer qjs.JS_FreeValue(env.ctx, val);
 
     if (!qjs.JS_IsObject(val)) return null;
-    const holder = @as(?*WrappedPointerHolder, @ptrCast(@alignCast(qjs.JS_GetOpaque(val, wrap_class_id))));
+    const holder: ?*WrappedPointerHolder = @ptrCast(@alignCast(qjs.JS_GetOpaque(val, wrap_class_id)));
     if (holder) |h| return h.wrap;
     return null;
 }
@@ -109,7 +109,10 @@ pub export fn napi_wrap(env_: napi_env, js_object: napi_value, native_object: ?*
             .ref_count = 1,
             .ctx = env.ctx,
         };
-        env.refs.append(gpa, ref_obj) catch {};
+        env.refs.append(gpa, ref_obj) catch {
+            ref_obj.deinit();
+            return env.genericFailure();
+        };
         r.* = ref_obj;
     }
     return env.ok();

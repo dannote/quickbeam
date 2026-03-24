@@ -235,6 +235,7 @@ pub fn load_addon(resource: RuntimeResource, path: []const u8, global_name: []co
     const data = resource.unpack();
     const env = beam.context.env orelse return beam.make(.{ .@"error", "no env" }, .{});
 
+    // SAFETY: enif_self initializes caller_pid before it is used.
     var caller_pid: beam.pid = undefined;
     _ = e.enif_self(env, &caller_pid);
     const ref_env = beam.alloc_env();

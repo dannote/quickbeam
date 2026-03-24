@@ -162,7 +162,7 @@ pub export fn napi_create_symbol(env_: napi_env, description: napi_value, result
     const r = result orelse return env.invalidArg();
 
     const desc_val = toVal(description);
-    var sym: qjs.JSValue = undefined;
+    var sym: qjs.JSValue = js.js_undefined();
     if (qjs.JS_IsString(desc_val)) {
         const cstr = qjs.JS_ToCString(env.ctx, desc_val);
         if (cstr != null) {
@@ -627,7 +627,7 @@ pub export fn napi_has_own_property(env_: napi_env, object: napi_value, key: nap
     if (atom == 0) return env.invalidArg();
     defer qjs.JS_FreeAtom(env.ctx, atom);
 
-    // GetOwnProperty returns a descriptor or -1 on error
+    // SAFETY: JS_GetOwnProperty initializes desc on success before it is read.
     var desc: qjs.JSPropertyDescriptor = undefined;
     const ret = qjs.JS_GetOwnProperty(env.ctx, &desc, obj, atom);
     if (ret > 0) {
@@ -1032,7 +1032,10 @@ pub export fn napi_create_reference(env_: napi_env, value: napi_value, initial_r
         .ref_count = initial_refcount,
         .ctx = env.ctx,
     };
-    env.refs.append(gpa, ref_obj) catch {};
+    env.refs.append(gpa, ref_obj) catch {
+        ref_obj.deinit();
+        return env.genericFailure();
+    };
     r.* = ref_obj;
     return env.ok();
 }
@@ -1203,7 +1206,7 @@ pub export fn napi_create_external(
     const env = env_ orelse return @intFromEnum(Status.invalid_arg);
     const r = result orelse return env.invalidArg();
 
-    const ext_data = @as(*ExternalData, @ptrCast(@alignCast(qjs.js_mallocz(env.ctx, @sizeOf(ExternalData)) orelse return env.genericFailure())));
+    const ext_data: *ExternalData = @ptrCast(@alignCast(qjs.js_mallocz(env.ctx, @sizeOf(ExternalData)) orelse return env.genericFailure()));
     ext_data.* = .{
         .data = data,
         .finalize_cb = finalize_cb,
@@ -1222,7 +1225,7 @@ pub export fn napi_get_value_external(env_: napi_env, value: napi_value, result:
     const env = env_ orelse return @intFromEnum(Status.invalid_arg);
     const r = result orelse return env.invalidArg();
     const val = toVal(value);
-    const ext_data = @as(?*ExternalData, @ptrCast(@alignCast(qjs.JS_GetOpaque(val, nt.external_class_id))));
+    const ext_data: ?*ExternalData = @ptrCast(@alignCast(qjs.JS_GetOpaque(val, nt.external_class_id)));
     r.* = if (ext_data) |e| e.data else null;
     return env.ok();
 }
@@ -2012,7 +2015,7 @@ var external_class_def = qjs.JSClassDef{
 };
 
 fn externalFinalizer(_: ?*qjs.JSRuntime, val: qjs.JSValue) callconv(.c) void {
-    const ext_data = @as(?*ExternalData, @ptrCast(@alignCast(qjs.JS_GetOpaque(val, nt.external_class_id))));
+    const ext_data: ?*ExternalData = @ptrCast(@alignCast(qjs.JS_GetOpaque(val, nt.external_class_id)));
     if (ext_data) |e| {
         if (e.finalize_cb) |cb| {
             cb(null, e.data, e.finalize_hint);

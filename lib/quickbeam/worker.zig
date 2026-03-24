@@ -697,6 +697,7 @@ pub const WorkerState = struct {
             const RTLD_NOLOAD = 0x00004;
             const dladdr = @extern(*const fn (?*const anyopaque, *DlInfo) callconv(.c) c_int, .{ .name = "dladdr" });
             const dlopen_fn = @extern(*const fn (?[*:0]const u8, c_int) callconv(.c) ?*anyopaque, .{ .name = "dlopen" });
+            // SAFETY: dladdr initializes info on success before it is read.
             var info: DlInfo = undefined;
             if (dladdr(@ptrCast(&napi_mod.napi_module_register), &info) != 0) {
                 _ = dlopen_fn(info.dli_fname, RTLD_LAZY | RTLD_GLOBAL | RTLD_NOLOAD);
@@ -767,7 +768,9 @@ pub const WorkerState = struct {
             _ = qjs.JS_SetPropertyStr(self.ctx, g, gn.ptr, qjs.JS_DupValue(self.ctx, final_exports));
             // Track the atom so we can delete it during cleanup
             const atom = qjs.JS_NewAtom(self.ctx, gn.ptr);
-            env.addon_globals.append(gpa, atom) catch {};
+            env.addon_globals.append(gpa, atom) catch {
+                qjs.JS_FreeAtom(self.ctx, atom);
+            };
         }
 
         const result_env = beam.alloc_env();

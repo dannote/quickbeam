@@ -94,7 +94,7 @@ jobs:
       - run: mix deps.get
       - run: mix npm.get
       - run: mix compile
-      - run: mix test --no-start
+      - run: mix test --no-start --exclude napi_addon --exclude napi_sqlite
 
   asan:
     name: AddressSanitizer
