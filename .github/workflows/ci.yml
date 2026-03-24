@@ -55,6 +55,8 @@ jobs:
           path: node_modules
           key: ${{ runner.os }}-npm-${{ hashFiles('npm.lock') }}
 
+      - uses: oven-sh/setup-bun@v2
+
       - name: Install zlint
         run: curl -fsSL https://raw.githubusercontent.com/DonIsaac/zlint/refs/heads/main/tasks/install.sh | bash
 
