@@ -49,7 +49,14 @@ jobs:
           key: ${{ runner.os }}-mix-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('mix.lock') }}-${{ hashFiles('lib/quickbeam/*.zig') }}
           restore-keys: ${{ runner.os }}-mix-${{ matrix.otp }}-${{ matrix.elixir }}-
 
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-npm-${{ hashFiles('npm.lock') }}
+
       - run: mix deps.get
+      - run: mix npm.get
       - run: mix ci
 
   ubsan:
@@ -82,6 +89,7 @@ jobs:
           restore-keys: ${{ runner.os }}-ubsan-27.0-1.18-
 
       - run: mix deps.get
+      - run: mix npm.get
       - run: mix compile
       - run: mix test --no-start
 
