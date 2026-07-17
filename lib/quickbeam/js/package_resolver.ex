@@ -42,11 +42,12 @@ defmodule QuickBEAM.JS.PackageResolver do
   def find_node_modules(dir) do
     dir = Path.expand(dir)
     candidate = Path.join(dir, "node_modules")
+    parent = Path.dirname(dir)
 
     cond do
       File.dir?(candidate) -> candidate
-      dir == "/" -> nil
-      true -> find_node_modules(Path.dirname(dir))
+      parent == dir -> nil
+      true -> find_node_modules(parent)
     end
   end
 

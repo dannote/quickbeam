@@ -15,7 +15,14 @@ defmodule QuickBEAM.NodeChildProcess do
     cmd_opts = if cwd, do: [{:cd, cwd} | cmd_opts], else: cmd_opts
 
     run = fn ->
-      port = Port.open({:spawn, "sh -c " <> shell_escape(command)}, cmd_opts)
+      {executable, args} = shell_command(command)
+
+      port =
+        Port.open(
+          {:spawn_executable, String.to_charlist(executable)},
+          [{:args, Enum.map(args, &String.to_charlist/1)} | cmd_opts]
+        )
+
       collect_output(port, <<>>, max_buffer)
     end
 
@@ -61,7 +68,13 @@ defmodule QuickBEAM.NodeChildProcess do
     end
   end
 
-  defp shell_escape(command) do
-    "'" <> String.replace(command, "'", "'\\''") <> "'"
+  defp shell_command(command) do
+    case :os.type() do
+      {:win32, _name} ->
+        {System.find_executable("cmd.exe") || "cmd.exe", ["/d", "/s", "/c", command]}
+
+      _unix ->
+        {System.find_executable("sh") || "/bin/sh", ["-c", command]}
+    end
   end
 end

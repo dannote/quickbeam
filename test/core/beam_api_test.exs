@@ -115,9 +115,14 @@ defmodule QuickBEAM.Core.BeamAPITest do
 
   describe "Beam.which" do
     test "finds an executable on PATH", %{rt: rt} do
-      {:ok, result} = QuickBEAM.eval(rt, "Beam.which('ls')")
+      executable = if match?({:win32, _name}, :os.type()), do: "cmd.exe", else: "ls"
+      {:ok, result} = QuickBEAM.eval(rt, "Beam.which(#{Jason.encode!(executable)})")
       assert is_binary(result)
-      assert String.contains?(result, "ls")
+
+      assert String.contains?(
+               String.downcase(result),
+               executable |> Path.rootname() |> String.downcase()
+             )
     end
 
     test "returns null for nonexistent binary", %{rt: rt} do
@@ -435,12 +440,12 @@ defmodule QuickBEAM.Core.BeamAPITest do
       assert is_number(result)
     end
 
-    test "is monotonically increasing", %{rt: rt} do
+    test "is monotonically non-decreasing", %{rt: rt} do
       {:ok, result} =
         QuickBEAM.eval(rt, """
         const a = Beam.nanoseconds();
         const b = Beam.nanoseconds();
-        b > a
+        b >= a
         """)
 
       assert result == true

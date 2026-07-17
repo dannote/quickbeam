@@ -2,14 +2,20 @@ Application.ensure_all_started(:telemetry)
 Application.ensure_all_started(:bandit)
 
 Code.require_file("support/test262.ex", __DIR__)
+ExUnit.start()
 
 # Compile the test N-API addon from C source
 test_addon_src = Path.expand("support/test_addon.c", __DIR__)
 test_addon_out = Path.expand("support/test_addon.node", __DIR__)
 test_addon_hdr = Path.expand("support", __DIR__)
 
-unless File.exists?(test_addon_out) and
-         File.stat!(test_addon_out).mtime >= File.stat!(test_addon_src).mtime do
+napi_addon_excluded? = :napi_addon in ExUnit.configuration()[:exclude]
+
+addon_current? =
+  File.exists?(test_addon_out) and
+    File.stat!(test_addon_out).mtime >= File.stat!(test_addon_src).mtime
+
+unless napi_addon_excluded? or addon_current? do
   extra =
     case :os.type() do
       {:unix, :darwin} -> ["-undefined", "dynamic_lookup"]
@@ -23,8 +29,6 @@ unless File.exists?(test_addon_out) and
 
   {_, 0} = System.cmd("cc", args, stderr_to_stdout: true)
 end
-
-ExUnit.start()
 
 # Force garbage collection before BEAM exits to prevent NIF finalizer crashes.
 # On OTP 27.0.x, the BEAM shutdown races with QuickJS worker thread cleanup.

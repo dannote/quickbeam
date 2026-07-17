@@ -476,7 +476,11 @@ pub const WorkerState = struct {
         };
         @memcpy(bin.data[0..out_len], buf[0..out_len]);
         result.env = env;
-        result.term = e.enif_make_tuple2(env, beam.make_into_atom("bytes", .{ .env = env }).v, e.enif_make_binary(env, &bin));
+        const result_items = [_]e.ERL_NIF_TERM{
+            beam.make_into_atom("bytes", .{ .env = env }).v,
+            e.enif_make_binary(env, &bin),
+        };
+        result.term = e.enif_make_tuple_from_array(env, &result_items, result_items.len);
         result.ok = true;
     }
 

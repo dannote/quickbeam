@@ -1,6 +1,11 @@
 defmodule QuickBEAM.Node.ChildProcessTest do
   use ExUnit.Case, async: true
 
+  @windows? match?({:win32, _name}, :os.type())
+  @cwd_command if(@windows?, do: "cd", else: "pwd")
+  @empty_output_command if(@windows?, do: "type nul", else: "cat /dev/null")
+  @timeout_command if(@windows?, do: "ping -n 10 127.0.0.1 > nul", else: "sleep 10")
+
   setup do
     {:ok, rt} = QuickBEAM.start(apis: [:browser, :node])
 
@@ -18,7 +23,7 @@ defmodule QuickBEAM.Node.ChildProcessTest do
   describe "execSync" do
     test "returns stdout from echo", %{rt: rt} do
       {:ok, result} = QuickBEAM.eval(rt, "child_process.execSync('echo hello')")
-      assert result == "hello\n"
+      assert String.trim(result) == "hello"
     end
 
     test "throws on non-zero exit", %{rt: rt} do
@@ -28,17 +33,31 @@ defmodule QuickBEAM.Node.ChildProcessTest do
     end
 
     test "respects cwd option", %{rt: rt} do
-      {:ok, result} = QuickBEAM.eval(rt, "child_process.execSync('pwd', { cwd: '/tmp' })")
-      assert String.trim(result) =~ "/tmp"
+      cwd = System.tmp_dir!()
+
+      {:ok, result} =
+        QuickBEAM.eval(
+          rt,
+          "child_process.execSync(#{Jason.encode!(@cwd_command)}, { cwd: #{Jason.encode!(cwd)} })"
+        )
+
+      assert Path.expand(String.trim(result)) == Path.expand(cwd)
     end
 
     test "returns empty string for empty output", %{rt: rt} do
-      {:ok, result} = QuickBEAM.eval(rt, "child_process.execSync('cat /dev/null')")
+      {:ok, result} =
+        QuickBEAM.eval(rt, "child_process.execSync(#{Jason.encode!(@empty_output_command)})")
+
       assert result == ""
     end
 
     test "throws on timeout", %{rt: rt} do
-      result = QuickBEAM.eval(rt, "child_process.execSync('sleep 10', { timeout: 100 })")
+      result =
+        QuickBEAM.eval(
+          rt,
+          "child_process.execSync(#{Jason.encode!(@timeout_command)}, { timeout: 100 })"
+        )
+
       assert {:error, %{message: msg}} = result
       assert msg =~ "timed out"
     end

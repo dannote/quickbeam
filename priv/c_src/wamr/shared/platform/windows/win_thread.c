@@ -779,8 +779,6 @@ os_cond_broadcast(korp_cond *cond)
     return BHT_OK;
 }
 
-static os_thread_local_attribute uint8 *thread_stack_boundary = NULL;
-
 static ULONG
 GetCurrentThreadStackLimits_Win7(PULONG_PTR p_low_limit,
                                  PULONG_PTR p_high_limit)
@@ -807,11 +805,10 @@ GetCurrentThreadStackLimits_Win7(PULONG_PTR p_low_limit,
 uint8 *
 os_thread_get_stack_boundary()
 {
+    /* Recompute for each call. Zig's MinGW DLL TLS can retain the boundary
+       from a different BEAM scheduler thread, causing false stack overflows. */
     ULONG_PTR low_limit = 0, high_limit = 0;
     uint32 page_size;
-
-    if (thread_stack_boundary)
-        return thread_stack_boundary;
 
     page_size = os_getpagesize();
     if (GetCurrentThreadStackLimits_Kernel32) {
@@ -824,8 +821,7 @@ os_thread_get_stack_boundary()
 
     /* 4 pages are set unaccessible by system, we reserved
        one more page at least for safety */
-    thread_stack_boundary = (uint8 *)(uintptr_t)low_limit + page_size * 5;
-    return thread_stack_boundary;
+    return (uint8 *)(uintptr_t)low_limit + page_size * 5;
 }
 
 void
