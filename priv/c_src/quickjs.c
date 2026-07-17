@@ -1714,6 +1714,13 @@ void *js_realloc_rt(JSRuntime *rt, void *ptr, size_t size)
     return ptr;
 }
 
+/* Keep the exact DynBufReallocFunc signature. Windows control-flow integrity
+   traps indirect calls through the incompatible JSRuntime pointer cast. */
+static void *js_realloc_rt_opaque(void *opaque, void *ptr, size_t size)
+{
+    return js_realloc_rt((JSRuntime *)opaque, ptr, size);
+}
+
 size_t js_malloc_usable_size_rt(JSRuntime *rt, const void *ptr)
 {
     return rt->mf.js_malloc_usable_size(ptr);
@@ -47860,7 +47867,7 @@ static JSValue js_string_normalize(JSContext *ctx, JSValueConst this_val,
     }
 
     out_len = unicode_normalize(&out_buf, buf, buf_len, n_type,
-                                ctx->rt, (DynBufReallocFunc *)js_realloc_rt);
+                                ctx->rt, js_realloc_rt_opaque);
     js_free(ctx, buf);
     if (out_len < 0)
         return JS_EXCEPTION;
