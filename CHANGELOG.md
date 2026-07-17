@@ -9,7 +9,7 @@
 - Serialize native addon initialization and reject unsafe cross-runtime or post-reset reuse unless `allow_reinitialization: true` is explicitly selected.
 - Add x86-64 Windows native and precompiled NIF support for QuickJS, Lexbor, and WAMR.
 - Support Windows command execution in the Node `child_process` API.
-- Fix filesystem-root detection in package resolution on Windows.
+- Fix filesystem-root and absolute-path handling in package resolution on Windows.
 - Avoid false WAMR stack-overflow errors when BEAM scheduler threads share MinGW DLL TLS state.
 
 ## 0.10.20

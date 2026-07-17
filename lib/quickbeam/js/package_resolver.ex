@@ -15,8 +15,7 @@ defmodule QuickBEAM.JS.PackageResolver do
 
   @spec relative?(String.t()) :: boolean()
   def relative?("." <> _), do: true
-  def relative?("/" <> _), do: true
-  def relative?(_), do: false
+  def relative?(specifier), do: Path.type(specifier) in [:absolute, :volumerelative]
 
   @spec node_builtin?(String.t()) :: boolean()
   def node_builtin?("node:" <> _), do: true
@@ -108,16 +107,17 @@ defmodule QuickBEAM.JS.PackageResolver do
   def nearest_package(dir) do
     dir = Path.expand(dir)
     package_json_path = Path.join(dir, "package.json")
+    parent = Path.dirname(dir)
 
     cond do
       File.regular?(package_json_path) ->
         with {:ok, package} <- read_package_json(package_json_path), do: {:ok, dir, package}
 
-      dir == "/" or Path.basename(dir) == "node_modules" ->
+      parent == dir or Path.basename(dir) == "node_modules" ->
         :error
 
       true ->
-        nearest_package(Path.dirname(dir))
+        nearest_package(parent)
     end
   end
 
