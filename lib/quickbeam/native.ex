@@ -1,20 +1,21 @@
 defmodule QuickBEAM.Native do
   @moduledoc false
 
+  alias QuickBEAM.Native.Platform
+
   @version Mix.Project.config()[:version]
 
   @c_src_dir Application.app_dir(:quickbeam, "priv/c_src")
-  @windows? match?({:win32, _name}, :os.type())
+  @platform Platform.current()
   @hidden_cflags ["-fvisibility=hidden"]
-  @lexbor_port if(@windows?, do: "windows_nt", else: "posix")
+  @lexbor_port @platform.lexbor_port
   @lexbor_base_cflags [
     "-std=c99",
     "-DLEXBOR_STATIC",
     "-I#{@c_src_dir}",
     "-I#{@c_src_dir}/lexbor/ports/#{@lexbor_port}"
   ]
-  @lexbor_platform_cflags if(@windows?, do: ["-D_CRT_SECURE_NO_WARNINGS"], else: [])
-  @lexbor_cflags @lexbor_base_cflags ++ @lexbor_platform_cflags ++ @hidden_cflags
+  @lexbor_cflags @lexbor_base_cflags ++ Platform.lexbor_cflags(@platform) ++ @hidden_cflags
 
   @lexbor_src Path.wildcard("priv/c_src/lexbor/{core,dom,html,tag,ns,css,selectors}/**/*.c")
               |> Enum.concat(Path.wildcard("priv/c_src/lexbor/ports/#{@lexbor_port}/**/*.c"))
@@ -23,11 +24,7 @@ defmodule QuickBEAM.Native do
                 {:priv, String.replace_prefix(path, "priv/", ""), @lexbor_cflags}
               end)
 
-  @wamr_platform (cond do
-                    @windows? -> "windows"
-                    :os.type() == {:unix, :darwin} -> "darwin"
-                    true -> "linux"
-                  end)
+  @wamr_platform @platform.wamr_platform
 
   @wamr_base_cflags [
     "-std=c11",
@@ -76,16 +73,7 @@ defmodule QuickBEAM.Native do
     "-I#{@c_src_dir}/wamr/shared/mem-alloc",
     "-I#{@c_src_dir}/wamr/shared/platform/#{@wamr_platform}"
   ]
-  @wamr_platform_cflags if(@windows?,
-                          do: [
-                            "-DBH_PLATFORM_WINDOWS",
-                            "-DWASM_DISABLE_HW_BOUND_CHECK=1",
-                            "-DHAVE_STRUCT_TIMESPEC",
-                            "-D_WINSOCK_DEPRECATED_NO_WARNINGS"
-                          ],
-                          else: ["-D_GNU_SOURCE"]
-                        )
-  @wamr_cflags @wamr_base_cflags ++ @wamr_platform_cflags ++ @hidden_cflags
+  @wamr_cflags @wamr_base_cflags ++ Platform.wamr_cflags(@platform) ++ @hidden_cflags
 
   @wamr_src (Path.wildcard("priv/c_src/wamr/interpreter/wasm_loader.c") ++
                Path.wildcard("priv/c_src/wamr/interpreter/wasm_interp_classic.c") ++
@@ -110,25 +98,7 @@ defmodule QuickBEAM.Native do
                Path.wildcard("priv/c_src/wamr/shared/utils/runtime_timer.c") ++
                Path.wildcard("priv/c_src/wamr/shared/mem-alloc/mem_alloc.c") ++
                Path.wildcard("priv/c_src/wamr/shared/mem-alloc/ems/*.c") ++
-               if(@windows?,
-                 do:
-                   Path.wildcard("priv/c_src/wamr/shared/platform/windows/*.c")
-                   |> Enum.reject(&String.ends_with?(&1, "/win_file.c")),
-                 else:
-                   Path.wildcard("priv/c_src/wamr/shared/platform/common/posix/posix_malloc.c") ++
-                     Path.wildcard("priv/c_src/wamr/shared/platform/common/posix/posix_memmap.c") ++
-                     Path.wildcard("priv/c_src/wamr/shared/platform/common/posix/posix_thread.c") ++
-                     Path.wildcard("priv/c_src/wamr/shared/platform/common/posix/posix_time.c") ++
-                     Path.wildcard(
-                       "priv/c_src/wamr/shared/platform/common/posix/posix_blocking_op.c"
-                     ) ++
-                     [
-                       if(:os.type() == {:unix, :darwin},
-                         do: "priv/c_src/wamr/shared/platform/darwin/platform_init.c",
-                         else: "priv/c_src/wamr/shared/platform/linux/platform_init.c"
-                       )
-                     ]
-               ) ++
+               Platform.wamr_sources(@platform) ++
                ["priv/c_src/wamr/common/arch/invokeNative_general.c"] ++
                ["priv/c_src/wamr/shared/platform/common/memory/mremap.c"] ++
                ["priv/c_src/wamr_bridge.c"])
@@ -137,7 +107,6 @@ defmodule QuickBEAM.Native do
               {:priv, String.replace_prefix(path, "priv/", ""), @wamr_cflags}
             end)
 
-  @quickjs_platform_cflags if(@windows?, do: [], else: ["-D_GNU_SOURCE"])
   @quickjs_cflags if System.get_env("QUICKBEAM_UBSAN") == "1",
                     do: [
                       "-std=c11",
@@ -147,7 +116,7 @@ defmodule QuickBEAM.Native do
                     ],
                     else: ["-std=c11"]
 
-  @quickjs_cflags @quickjs_cflags ++ @quickjs_platform_cflags ++ @hidden_cflags
+  @quickjs_cflags @quickjs_cflags ++ Platform.quickjs_cflags(@platform) ++ @hidden_cflags
 
   if System.get_env("QUICKBEAM_BUILD") in ["1", "true"] and
        is_nil(System.get_env("ZIG_LOCAL_CACHE_DIR")) do
@@ -165,18 +134,8 @@ defmodule QuickBEAM.Native do
     zig_code_path: "quickbeam.zig",
     optimize: :env,
     c: [
-      include_dirs: [
-        {:priv, "c_src"},
-        {:priv, "c_src/lexbor/ports/#{@lexbor_port}"},
-        {:priv, "c_src/wamr/include"},
-        {:priv, "c_src/wamr/interpreter"},
-        {:priv, "c_src/wamr/common"},
-        {:priv, "c_src/wamr/shared/utils"},
-        {:priv, "c_src/wamr/shared/platform/include"},
-        {:priv, "c_src/wamr/shared/platform/#{@wamr_platform}"},
-        {:priv, "c_src/wamr/shared/mem-alloc"}
-      ],
-      link_lib: if(@windows?, do: [{:system, "ws2_32"}], else: []),
+      include_dirs: Platform.include_dirs(@platform),
+      link_lib: Platform.link_libraries(@platform),
       src:
         [
           {:priv, "c_src/quickjs.c", @quickjs_cflags},
