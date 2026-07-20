@@ -825,11 +825,11 @@ pub const WorkerState = struct {
         const env = beam.alloc_env();
         result.ok = false;
         result.env = env;
-        result.term = e.enif_make_tuple2(
-            env,
+        const error_items = [_]e.ERL_NIF_TERM{
             beam.make_into_atom(reason, .{ .env = env }).v,
             beam.make(path, .{ .env = env }).v,
-        );
+        };
+        result.term = e.enif_make_tuple_from_array(env, &error_items, error_items.len);
     }
 
     fn claimAddon(path: []const u8) enum { claimed, already_claimed, limit, oom } {
