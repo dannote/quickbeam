@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.0
 
 - Add `QuickBEAM.VM`, an isolated BEAM interpreter for verified QuickJS v26 bytecode with async/await, asynchronous `Beam.call` handlers, JavaScript errors, explicit resource limits, deterministic measurements, and bounded Test262 and SSR coverage. `QuickBEAM.VM.call/4` and `measure_call/4` initialize a fresh heap and invoke a named global with a shape matching the native call API.
 - Add explicit immutable program pinning through `QuickBEAM.VM.pin/1` and `QuickBEAM.VM.unpin/1`, with fixed slots, single-flight admission, monitored evaluation leases, restart restoration, and decoded-residency limits.
