@@ -642,7 +642,9 @@ pub const WorkerState = struct {
     }
 
     fn await_promise(self: *WorkerState, promise: qjs.JSValue, result: *Result, unwrap_async: bool) void {
-        for (0..10000) |_| {
+        const deadline = self.rd.deadline;
+        var iterations: usize = 0;
+        while (!promise_wait_expired(deadline, iterations)) : (iterations += 1) {
             const state = qjs.JS_PromiseState(self.ctx, promise);
 
             if (state == qjs.JS_PROMISE_FULFILLED) {
@@ -679,9 +681,11 @@ pub const WorkerState = struct {
                     .resolve_call_term => |rc| self.resolve_pending_term(rc.env, rc.term, rc.id),
                     .call_fn_sync => |p| {
                         var nested_result: Result = .{};
+                        const outer_deadline = self.rd.deadline;
+                        self.clear_deadline();
                         self.set_deadline(p.timeout_ns);
                         self.do_call(p.name, p.args_env, p.args_term, &nested_result);
-                        self.clear_deadline();
+                        self.rd.deadline = outer_deadline;
                         self.complete_sync_call(p.id, &nested_result);
                         gpa.free(p.name);
                     },
@@ -733,6 +737,14 @@ pub const WorkerState = struct {
 
         result.ok = false;
         result.json = "Promise resolution timeout";
+    }
+
+    fn promise_wait_expired(deadline: ?i128, iterations: usize) bool {
+        if (deadline) |value| {
+            return std.time.nanoTimestamp() > value;
+        }
+
+        return iterations >= 10000;
     }
 
     fn set_ok_term(self: *WorkerState, val: qjs.JSValue, result: *Result) void {

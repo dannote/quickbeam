@@ -12,6 +12,7 @@
 - Fix filesystem-root and absolute-path handling in package resolution on Windows.
 - Avoid false WAMR stack-overflow errors when BEAM scheduler threads share MinGW DLL TLS state.
 - Preserve the exact Unicode allocator callback signature required by Windows control-flow integrity.
+- Honor configured call deadlines while awaiting promises instead of using a fixed iteration limit.
 
 ## 0.10.20
 

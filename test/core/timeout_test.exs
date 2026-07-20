@@ -22,6 +22,25 @@ defmodule QuickBEAM.Core.TimeoutTest do
     QuickBEAM.stop(rt)
   end
 
+  test "promise waiting honors the configured timeout instead of an iteration limit" do
+    {:ok, rt} = QuickBEAM.start()
+
+    assert {:ok, 10_001} =
+             QuickBEAM.eval(
+               rt,
+               """
+               new Promise(resolve => {
+                 let count = 0;
+                 const next = () => ++count === 10_001 ? resolve(count) : setTimeout(next, 0);
+                 next();
+               })
+               """,
+               timeout: 5000
+             )
+
+    QuickBEAM.stop(rt)
+  end
+
   test "eval without timeout has no limit" do
     {:ok, rt} = QuickBEAM.start()
 
