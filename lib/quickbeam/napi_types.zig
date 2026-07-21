@@ -1,4 +1,5 @@
 const types = @import("types.zig");
+const sync = @import("sync.zig");
 const js = @import("js_helpers.zig");
 const std = types.std;
 const qjs = types.qjs;
@@ -152,12 +153,12 @@ pub const NapiEnv = struct {
     instance_data: ?*anyopaque = null,
     instance_data_finalize: napi_finalize = null,
     instance_data_hint: ?*anyopaque = null,
-    scope_stack: std.ArrayListUnmanaged(*HandleScope) = .{},
-    persistent_slots: std.ArrayListUnmanaged(*qjs.JSValue) = .{},
-    addon_globals: std.ArrayListUnmanaged(qjs.JSAtom) = .{},
+    scope_stack: std.ArrayListUnmanaged(*HandleScope) = .empty,
+    persistent_slots: std.ArrayListUnmanaged(*qjs.JSValue) = .empty,
+    addon_globals: std.ArrayListUnmanaged(qjs.JSAtom) = .empty,
     in_callback: bool = false,
-    refs: std.ArrayListUnmanaged(*NapiReference) = .{},
-    callback_data: std.ArrayListUnmanaged(*FunctionCallbackData) = .{},
+    refs: std.ArrayListUnmanaged(*NapiReference) = .empty,
+    callback_data: std.ArrayListUnmanaged(*FunctionCallbackData) = .empty,
 
     pub fn setLastError(self: *NapiEnv, status: Status) napi_status {
         self.last_error.error_code = @intFromEnum(status);
@@ -259,7 +260,7 @@ pub const NapiEnv = struct {
 // ──── Handle Scope ────
 
 pub const HandleScope = struct {
-    values: std.ArrayListUnmanaged(qjs.JSValue) = .{},
+    values: std.ArrayListUnmanaged(qjs.JSValue) = .empty,
     escapable: bool,
     escaped: bool = false,
 
@@ -382,10 +383,10 @@ pub const ThreadSafeFunction = struct {
     finalize_cb: napi_finalize = null,
     finalize_data: ?*anyopaque = null,
     thread_count: std.atomic.Value(i64) = std.atomic.Value(i64).init(0),
-    queue: std.ArrayListUnmanaged(?*anyopaque) = .{},
+    queue: std.ArrayListUnmanaged(?*anyopaque) = .empty,
     max_queue_size: usize = 0,
-    lock: std.Thread.Mutex = .{},
-    condvar: std.Thread.Condition = .{},
+    lock: sync.Mutex = .{},
+    condvar: sync.Condition = .{},
     closing: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     finalized: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 

@@ -434,7 +434,7 @@ fn do_query_selector(ctx: ?*qjs.JSContext, root: *lxb.lxb_dom_node_t, dd: *Docum
 
     defer lxb.qb_css_selector_list_destroy(dd.css_parser, list);
 
-    var results = std.ArrayList(*lxb.lxb_dom_node_t){};
+    var results: std.ArrayList(*lxb.lxb_dom_node_t) = .empty;
 
     var sctx = SelectorCtx{ .results = &results, .find_one = find_one };
     _ = lxb.qb_selectors_find(dd.selectors, root, list, selector_callback, @ptrCast(&sctx));
@@ -814,7 +814,7 @@ fn el_matches(ctx: ?*qjs.JSContext, this: qjs.JSValue, argc: c_int, argv: [*c]qj
         return js.js_false();
     defer lxb.qb_css_selector_list_destroy(dd.css_parser, list);
 
-    var results = std.ArrayList(*lxb.lxb_dom_node_t){};
+    var results: std.ArrayList(*lxb.lxb_dom_node_t) = .empty;
     defer results.deinit(types.gpa);
 
     const parent = lxb.qb_node_parent(node) orelse return js.js_false();
@@ -843,7 +843,7 @@ fn el_closest(ctx: ?*qjs.JSContext, this: qjs.JSValue, argc: c_int, argv: [*c]qj
     var current: ?*lxb.lxb_dom_node_t = js_to_node(this);
     while (current) |c| {
         if (lxb.qb_node_type(c) == lxb.QB_NODE_TYPE_ELEMENT) {
-            var results = std.ArrayList(*lxb.lxb_dom_node_t){};
+            var results: std.ArrayList(*lxb.lxb_dom_node_t) = .empty;
             defer results.deinit(types.gpa);
             var sctx = SelectorCtx{ .results = &results, .find_one = false };
             _ = lxb.qb_selectors_find(dd.selectors, root, list, selector_callback, @ptrCast(&sctx));
@@ -859,7 +859,7 @@ fn el_closest(ctx: ?*qjs.JSContext, this: qjs.JSValue, argc: c_int, argv: [*c]qj
 
 fn el_get_inner_html(ctx: ?*qjs.JSContext, this: qjs.JSValue, _: c_int, _: [*c]qjs.JSValue) callconv(.c) qjs.JSValue {
     const node = js_to_node(this) orelse return js.js_undefined();
-    var buf = std.ArrayList(u8){};
+    var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(types.gpa);
 
     var child: ?*lxb.lxb_dom_node_t = lxb.qb_node_first_child(node);
@@ -896,7 +896,7 @@ fn el_set_inner_html(ctx: ?*qjs.JSContext, this: qjs.JSValue, _: c_int, argv: [*
 
 fn el_get_outer_html(ctx: ?*qjs.JSContext, this: qjs.JSValue, _: c_int, _: [*c]qjs.JSValue) callconv(.c) qjs.JSValue {
     const node = js_to_node(this) orelse return js.js_undefined();
-    var buf = std.ArrayList(u8){};
+    var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(types.gpa);
     _ = lxb.qb_serialize_tree(node, serialize_callback, @ptrCast(&buf));
     return qjs.JS_NewStringLen(ctx, @ptrCast(buf.items.ptr), buf.items.len);
@@ -1438,7 +1438,7 @@ pub fn do_dom_query(dd: *DocumentData, selector: []const u8, env: ?*e.ErlNifEnv)
         return beam.make_into_atom("nil", .{ .env = env }).v;
     defer lxb.qb_css_selector_list_destroy(dd.css_parser, list);
 
-    var results = std.ArrayList(*lxb.lxb_dom_node_t){};
+    var results: std.ArrayList(*lxb.lxb_dom_node_t) = .empty;
     var sctx = SelectorCtx{ .results = &results, .find_one = true };
     _ = lxb.qb_selectors_find(dd.selectors, root, list, selector_callback, @ptrCast(&sctx));
 
@@ -1455,7 +1455,7 @@ pub fn do_dom_query_all(dd: *DocumentData, selector: []const u8, env: ?*e.ErlNif
         return beam.make_empty_list(.{ .env = env }).v;
     defer lxb.qb_css_selector_list_destroy(dd.css_parser, list);
 
-    var results = std.ArrayList(*lxb.lxb_dom_node_t){};
+    var results: std.ArrayList(*lxb.lxb_dom_node_t) = .empty;
     var sctx = SelectorCtx{ .results = &results, .find_one = false };
     _ = lxb.qb_selectors_find(dd.selectors, root, list, selector_callback, @ptrCast(&sctx));
     defer results.deinit(types.gpa);
@@ -1479,7 +1479,7 @@ pub fn do_dom_text(dd: *DocumentData, selector: []const u8, env: ?*e.ErlNifEnv) 
         return beam.make(@as([]const u8, ""), opts).v;
     defer lxb.qb_css_selector_list_destroy(dd.css_parser, list);
 
-    var results = std.ArrayList(*lxb.lxb_dom_node_t){};
+    var results: std.ArrayList(*lxb.lxb_dom_node_t) = .empty;
     var sctx = SelectorCtx{ .results = &results, .find_one = true };
     _ = lxb.qb_selectors_find(dd.selectors, root, list, selector_callback, @ptrCast(&sctx));
     defer results.deinit(types.gpa);
@@ -1501,7 +1501,7 @@ pub fn do_dom_attr(dd: *DocumentData, selector: []const u8, attr_name: []const u
         return beam.make_into_atom("nil", opts).v;
     defer lxb.qb_css_selector_list_destroy(dd.css_parser, list_sel);
 
-    var results = std.ArrayList(*lxb.lxb_dom_node_t){};
+    var results: std.ArrayList(*lxb.lxb_dom_node_t) = .empty;
     var sctx = SelectorCtx{ .results = &results, .find_one = true };
     _ = lxb.qb_selectors_find(dd.selectors, root, list_sel, selector_callback, @ptrCast(&sctx));
     defer results.deinit(types.gpa);
@@ -1518,7 +1518,7 @@ pub fn do_dom_attr(dd: *DocumentData, selector: []const u8, attr_name: []const u
 pub fn do_dom_html(dd: *DocumentData, env: ?*e.ErlNifEnv) e.ErlNifTerm {
     const opts = .{ .env = env };
     const node = lxb.qb_doc_as_node(dd.doc) orelse return beam.make(@as([]const u8, ""), opts).v;
-    var buf = std.ArrayList(u8){};
+    var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(types.gpa);
     _ = lxb.qb_serialize_tree(node, serialize_callback, @ptrCast(&buf));
     return beam.make(buf.items, opts).v;

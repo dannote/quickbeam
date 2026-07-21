@@ -133,7 +133,7 @@ pub export fn napi_create_string_utf16(env_: napi_env, str: ?[*]const u16, lengt
     };
 
     // Convert UTF-16 to UTF-8
-    var buf: std.ArrayListUnmanaged(u8) = .{};
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
     defer buf.deinit(gpa);
     var i: usize = 0;
     while (i < slice.len) {

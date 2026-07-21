@@ -30,7 +30,7 @@ fn console_error(ctx: ?*qjs.JSContext, _: qjs.JSValue, argc: c_int, argv: [*c]qj
 fn send_console_message(ctx: ?*qjs.JSContext, level: []const u8, argc: c_int, argv: [*c]qjs.JSValue) qjs.JSValue {
     const self: *worker.WorkerState = @ptrCast(@alignCast(qjs.JS_GetContextOpaque(ctx)));
 
-    var list = std.ArrayList(u8){};
+    var list: std.ArrayList(u8) = .empty;
     defer list.deinit(types.gpa);
 
     var i: c_int = 0;

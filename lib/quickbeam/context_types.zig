@@ -1,4 +1,5 @@
 const types = @import("types.zig");
+const sync = @import("sync.zig");
 const worker = @import("worker.zig");
 
 pub const std = types.std;
@@ -133,14 +134,14 @@ pub const PoolMessageNode = struct {
 };
 
 pub const PoolData = struct {
-    mutex: std.Thread.Mutex,
-    cond: std.Thread.Condition,
+    mutex: sync.Mutex,
+    queue_event: sync.Event,
     queue_head: ?*PoolMessageNode,
     queue_tail: ?*PoolMessageNode,
     stopped: bool,
     thread: ?std.Thread,
-    lifecycle_mutex: std.Thread.Mutex = .{},
-    lifecycle_cond: std.Thread.Condition = .{},
+    lifecycle_mutex: sync.Mutex = .{},
+    lifecycle_cond: sync.Condition = .{},
     lifecycle: types.LifecycleState = .running,
     memory_limit: usize = 256 * 1024 * 1024,
     max_stack_size: usize = 8 * 1024 * 1024,
@@ -155,7 +156,7 @@ pub const PoolData = struct {
     shutting_down: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     deadline: ?i128 = null,
     // Maps context_id → pointer to context's RuntimeData (for sync call resolution)
-    rd_map_mutex: std.Thread.Mutex = .{},
+    rd_map_mutex: sync.Mutex = .{},
     rd_map: std.AutoHashMapUnmanaged(ContextId, *types.RuntimeData) = .{},
 };
 
@@ -172,42 +173,40 @@ pub fn pool_enqueue(pd: *PoolData, msg: PoolMessage) void {
         pd.queue_head = node;
     }
     pd.queue_tail = node;
-    pd.cond.signal();
+    pd.queue_event.set();
 }
 
 pub fn pool_dequeue(pd: *PoolData) ?PoolMessage {
     pd.mutex.lock();
     defer pd.mutex.unlock();
 
-    const node = pd.queue_head orelse return null;
+    const node = pd.queue_head orelse {
+        pd.queue_event.reset();
+        return null;
+    };
     pd.queue_head = node.next;
-    if (pd.queue_head == null) pd.queue_tail = null;
+    if (pd.queue_head == null) {
+        pd.queue_tail = null;
+        pd.queue_event.reset();
+    }
     const msg = node.msg;
     gpa.destroy(node);
     return msg;
 }
 
 pub fn pool_dequeue_blocking(pd: *PoolData, timeout_ns: ?u64) ?PoolMessage {
-    pd.mutex.lock();
+    while (true) {
+        if (pool_dequeue(pd)) |msg| return msg;
 
-    while (pd.queue_head == null and !pd.stopped) {
-        if (timeout_ns) |t| {
-            pd.cond.timedWait(&pd.mutex, t) catch break;
+        pd.mutex.lock();
+        const stopped = pd.stopped;
+        pd.mutex.unlock();
+        if (stopped) return null;
+
+        if (timeout_ns) |timeout| {
+            pd.queue_event.timedWait(timeout) catch return null;
         } else {
-            pd.cond.wait(&pd.mutex);
+            pd.queue_event.wait();
         }
     }
-
-    const node = pd.queue_head;
-    if (node) |n| {
-        pd.queue_head = n.next;
-        if (pd.queue_head == null) pd.queue_tail = null;
-        pd.mutex.unlock();
-        const msg = n.msg;
-        gpa.destroy(n);
-        return msg;
-    }
-
-    pd.mutex.unlock();
-    return null;
 }

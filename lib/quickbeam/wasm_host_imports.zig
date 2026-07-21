@@ -139,10 +139,10 @@ fn find_module_index(module_names: []const [:0]u8, module_name: []const u8) ?usi
 pub fn prepare(imports: []const ImportSpec, runtime_data: ?*anyopaque, mode: CallbackMode) !PreparedImports {
     if (imports.len == 0) return PreparedImports.empty();
 
-    var module_names_list: std.ArrayListUnmanaged([:0]u8) = .{};
+    var module_names_list: std.ArrayListUnmanaged([:0]u8) = .empty;
     defer module_names_list.deinit(std.heap.c_allocator);
 
-    var module_counts: std.ArrayListUnmanaged(usize) = .{};
+    var module_counts: std.ArrayListUnmanaged(usize) = .empty;
     defer module_counts.deinit(std.heap.c_allocator);
 
     const import_module_indices = try std.heap.c_allocator.alloc(usize, imports.len);

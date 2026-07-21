@@ -95,7 +95,7 @@ pub fn start_runtime(owner_pid: beam.pid, opts: beam.term) !RuntimeResource {
     const data = try gpa.create(RuntimeData);
     data.* = .{
         .mutex = .{},
-        .cond = .{},
+        .queue_event = .{},
         .queue_head = null,
         .queue_tail = null,
         .stopped = false,
@@ -602,7 +602,7 @@ pub fn pool_start(opts: beam.term) !PoolResource {
     const data = try gpa.create(ct.PoolData);
     data.* = .{
         .mutex = .{},
-        .cond = .{},
+        .queue_event = .{},
         .queue_head = null,
         .queue_tail = null,
         .stopped = false,

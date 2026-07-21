@@ -1,6 +1,7 @@
 const types = @import("types.zig");
 const worker = @import("worker.zig");
 const js = @import("js_helpers.zig");
+const sync = @import("sync.zig");
 const std = types.std;
 const qjs = types.qjs;
 
@@ -45,14 +46,14 @@ fn set_timer_common(ctx: ?*qjs.JSContext, argc: c_int, argv: [*c]qjs.JSValue, is
 
     self.timers.put(id, .{
         .callback = callback,
-        .deadline = std.time.nanoTimestamp() + @as(i128, delay_ns),
+        .deadline = sync.nowNanoseconds() + @as(i128, delay_ns),
         .interval_ns = if (is_interval) delay_ns else null,
     }) catch {
         qjs.JS_FreeValue(ctx, callback);
         return qjs.JS_ThrowOutOfMemory(ctx);
     };
 
-    self.rd.cond.signal();
+    self.rd.queue_event.set();
 
     return qjs.JS_NewFloat64(ctx, @floatFromInt(id));
 }

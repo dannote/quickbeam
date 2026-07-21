@@ -2,10 +2,11 @@ pub const std = @import("std");
 pub const beam = @import("beam");
 pub const e = @import("erl_nif");
 pub const qjs = @cImport(@cInclude("quickjs.h"));
+const sync = @import("sync.zig");
 
 pub const gpa = std.heap.c_allocator;
 
-pub var class_ids_mutex: std.Thread.Mutex = .{};
+pub var class_ids_mutex: sync.Mutex = .{};
 
 pub fn reserveClassID(rt: *qjs.JSRuntime, class_id: *qjs.JSClassID) void {
     if (class_id.* == 0) {
@@ -29,18 +30,18 @@ pub const SyncCallSlot = struct {
     result_env: ?*e.ErlNifEnv = null,
     result_term: ?e.ErlNifTerm = null,
     ok: bool = false,
-    done: std.Thread.ResetEvent = .{},
+    done: sync.Event = .{},
 };
 
 pub const RuntimeData = struct {
-    mutex: std.Thread.Mutex,
-    cond: std.Thread.Condition,
+    mutex: sync.Mutex,
+    queue_event: sync.Event,
     queue_head: ?*MessageNode,
     queue_tail: ?*MessageNode,
     stopped: bool,
     thread: ?std.Thread,
-    lifecycle_mutex: std.Thread.Mutex = .{},
-    lifecycle_cond: std.Thread.Condition = .{},
+    lifecycle_mutex: sync.Mutex = .{},
+    lifecycle_cond: sync.Condition = .{},
     lifecycle: LifecycleState = .running,
     memory_limit: usize = 256 * 1024 * 1024,
     max_stack_size: usize = 8 * 1024 * 1024,
@@ -51,7 +52,7 @@ pub const RuntimeData = struct {
     wasm_heap_size: u32 = 65_536,
     max_convert_depth: u32 = 32,
     max_convert_nodes: u32 = 10_000,
-    sync_slots_mutex: std.Thread.Mutex = .{},
+    sync_slots_mutex: sync.Mutex = .{},
     sync_slots: std.AutoHashMapUnmanaged(u64, *SyncCallSlot) = .{},
     deadline: ?i128 = null,
     shutting_down: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
@@ -248,42 +249,40 @@ pub fn enqueue(rd: *RuntimeData, msg: Message) void {
         rd.queue_head = node;
     }
     rd.queue_tail = node;
-    rd.cond.signal();
+    rd.queue_event.set();
 }
 
 pub fn dequeue(rd: *RuntimeData) ?Message {
     rd.mutex.lock();
     defer rd.mutex.unlock();
 
-    const node = rd.queue_head orelse return null;
+    const node = rd.queue_head orelse {
+        rd.queue_event.reset();
+        return null;
+    };
     rd.queue_head = node.next;
-    if (rd.queue_head == null) rd.queue_tail = null;
+    if (rd.queue_head == null) {
+        rd.queue_tail = null;
+        rd.queue_event.reset();
+    }
     const msg = node.msg;
     gpa.destroy(node);
     return msg;
 }
 
 pub fn dequeue_blocking(rd: *RuntimeData, timeout_ns: ?u64) ?Message {
-    rd.mutex.lock();
+    while (true) {
+        if (dequeue(rd)) |msg| return msg;
 
-    while (rd.queue_head == null and !rd.stopped) {
-        if (timeout_ns) |t| {
-            rd.cond.timedWait(&rd.mutex, t) catch break;
+        rd.mutex.lock();
+        const stopped = rd.stopped;
+        rd.mutex.unlock();
+        if (stopped) return null;
+
+        if (timeout_ns) |timeout| {
+            rd.queue_event.timedWait(timeout) catch return null;
         } else {
-            rd.cond.wait(&rd.mutex);
+            rd.queue_event.wait();
         }
     }
-
-    const node = rd.queue_head;
-    if (node) |n| {
-        rd.queue_head = n.next;
-        if (rd.queue_head == null) rd.queue_tail = null;
-        rd.mutex.unlock();
-        const msg = n.msg;
-        gpa.destroy(n);
-        return msg;
-    }
-
-    rd.mutex.unlock();
-    return null;
 }

@@ -1,6 +1,7 @@
 const types = @import("types.zig");
 const worker = @import("worker.zig");
 const js = @import("js_helpers.zig");
+const sync = @import("sync.zig");
 const std = types.std;
 const qjs = types.qjs;
 
@@ -50,7 +51,9 @@ fn get_random_values(
         return qjs.JS_ThrowTypeError(ctx, "Failed to get ArrayBuffer data");
 
     const slice = ptr[byte_offset .. byte_offset + byte_len];
-    std.crypto.random.bytes(slice);
+    if (!sync.fillRandom(slice)) {
+        return qjs.JS_ThrowInternalError(ctx, "Failed to obtain secure random bytes");
+    }
 
     return qjs.JS_DupValue(ctx, argv[0]);
 }
@@ -115,7 +118,7 @@ fn performance_now(
     _: [*c]qjs.JSValue,
 ) callconv(.c) qjs.JSValue {
     const self: *worker.WorkerState = @ptrCast(@alignCast(qjs.JS_GetContextOpaque(ctx)));
-    const now = std.time.nanoTimestamp();
+    const now = sync.nowNanoseconds();
     const elapsed_ns = now - self.start_time;
     const ms: f64 = @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000.0;
     return qjs.JS_NewFloat64(ctx, ms);

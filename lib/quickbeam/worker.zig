@@ -1,4 +1,6 @@
 const types = @import("types.zig");
+const sync = @import("sync.zig");
+const DynamicLibrary = @import("dynamic_library.zig").DynamicLibrary;
 const js = @import("js_helpers.zig");
 const globals = @import("globals.zig");
 const js_to_beam = @import("js_to_beam.zig");
@@ -20,14 +22,14 @@ const qjs = types.qjs;
 const gpa = types.gpa;
 
 const AddonClaim = struct {
-    library: ?*std.DynLib = null,
+    library: ?*DynamicLibrary = null,
 };
 
 // Native addon code and static state live for the OS process lifetime. Keep one
 // bounded, serialized handle per canonical path rather than unloading code that
 // may still own process-global callbacks or data.
 const max_addon_claims = 256;
-var addon_load_mutex: std.Thread.Mutex = .{};
+var addon_load_mutex: sync.Mutex = .{};
 var addon_claims: std.StringHashMapUnmanaged(AddonClaim) = .{};
 
 pub const Result = struct {
@@ -160,7 +162,7 @@ pub const WorkerState = struct {
             }
         }
         if (min_deadline) |d| {
-            const now = std.time.nanoTimestamp();
+            const now = sync.nowNanoseconds();
             if (d <= now) return 0;
             return @intCast(d - now);
         }
@@ -168,7 +170,7 @@ pub const WorkerState = struct {
     }
 
     pub fn fire_expired_timers(self: *WorkerState) void {
-        const now = std.time.nanoTimestamp();
+        const now = sync.nowNanoseconds();
 
         var expired_buf: [64]u64 = undefined;
         var expired_count: usize = 0;
@@ -198,7 +200,7 @@ pub const WorkerState = struct {
                 // Re-check: callback may have removed this timer via clearInterval
                 if (self.timers.getPtr(id)) |live_entry| {
                     if (interval) |iv| {
-                        live_entry.deadline = std.time.nanoTimestamp() + @as(i128, iv);
+                        live_entry.deadline = sync.nowNanoseconds() + @as(i128, iv);
                     } else {
                         qjs.JS_FreeValue(self.ctx, live_entry.callback);
                         _ = self.timers.remove(id);
@@ -732,7 +734,7 @@ pub const WorkerState = struct {
 
             const timer_ns = self.next_timer_timeout_ns();
             const sleep_ns: u64 = if (timer_ns) |t| @min(t, 1_000_000) else 1_000_000;
-            std.Thread.sleep(sleep_ns);
+            if (sleep_ns > 0) sync.sleepNanoseconds(sleep_ns);
         }
 
         result.ok = false;
@@ -741,7 +743,7 @@ pub const WorkerState = struct {
 
     fn promise_wait_expired(deadline: ?i128, iterations: usize) bool {
         if (deadline) |value| {
-            return std.time.nanoTimestamp() > value;
+            return sync.nowNanoseconds() > value;
         }
 
         return iterations >= 10000;
@@ -867,7 +869,7 @@ pub const WorkerState = struct {
     }
 
     pub fn do_load_addon(self: *WorkerState, path: [:0]const u8, global_name: ?[:0]const u8, allow_reinitialization: bool, result: *Result) void {
-        const canonical_path = std.fs.cwd().realpathAlloc(gpa, path) catch {
+        const canonical_path = sync.realPathAlloc(gpa, path) catch {
             setAddonError(result, "addon_not_found", path);
             return;
         };
@@ -915,13 +917,13 @@ pub const WorkerState = struct {
         napi_mod.clearPendingModule();
 
         const lib = if (new_claim) blk: {
-            const opened = gpa.create(std.DynLib) catch {
+            const opened = gpa.create(DynamicLibrary) catch {
                 releaseAddonClaim(canonical_path);
                 result.ok = false;
                 result.json = "OOM";
                 return;
             };
-            opened.* = std.DynLib.openZ(path_z) catch {
+            opened.* = DynamicLibrary.open(gpa, path_z) catch {
                 releaseAddonClaim(canonical_path);
                 gpa.destroy(opened);
                 result.ok = false;
@@ -1005,7 +1007,7 @@ pub const WorkerState = struct {
 
     pub fn set_deadline(self: *WorkerState, timeout_ns: u64) void {
         if (timeout_ns > 0) {
-            self.rd.deadline = std.time.nanoTimestamp() + @as(i128, timeout_ns);
+            self.rd.deadline = sync.nowNanoseconds() + @as(i128, timeout_ns);
         }
     }
 
@@ -1028,7 +1030,7 @@ pub const WorkerState = struct {
 fn interrupt_handler(_: ?*qjs.JSRuntime, user_data: ?*anyopaque) callconv(.c) c_int {
     const rd: *types.RuntimeData = @ptrCast(@alignCast(user_data));
     if (rd.deadline) |deadline| {
-        if (std.time.nanoTimestamp() > deadline) return 1;
+        if (sync.nowNanoseconds() > deadline) return 1;
     }
     return 0;
 }
@@ -1061,7 +1063,7 @@ pub fn worker_main(rd: *types.RuntimeData, owner_pid: beam.pid) void {
         .pending_calls = std.AutoHashMap(u64, PendingCall).init(gpa),
         .timers = std.AutoHashMap(u64, TimerEntry).init(gpa),
         .addon_exports = std.StringHashMap(qjs.JSValue).init(gpa),
-        .start_time = std.time.nanoTimestamp(),
+        .start_time = sync.nowNanoseconds(),
         .max_reductions = 0,
     };
     defer state.deinit();

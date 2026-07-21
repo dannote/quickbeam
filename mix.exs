@@ -64,7 +64,7 @@ defmodule QuickBEAM.MixProject do
   defp deps do
     [
       {:zigler_precompiled, "~> 0.1.5"},
-      {:zigler, "~> 0.15.2", runtime: false, optional: true},
+      {:zigler, "~> 0.16.0", runtime: false, optional: true},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:ex_dna, "~> 1.1", only: [:dev, :test], runtime: false},
@@ -80,8 +80,7 @@ defmodule QuickBEAM.MixProject do
       {:bandit, "~> 1.0", only: :test},
       {:websock_adapter, "~> 0.5", only: :test},
       {:benchee, "~> 1.3", only: :bench, runtime: false},
-      {:quickjs_ex, "~> 0.3.1", only: :bench, runtime: false},
-      {:ex_doc, "~> 0.35", only: :dev, runtime: false}
+      {:quickjs_ex, "~> 0.3.1", only: :bench, runtime: false}
     ]
   end
 

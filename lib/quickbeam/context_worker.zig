@@ -4,6 +4,7 @@ const worker = @import("worker.zig");
 const js = @import("js_helpers.zig");
 const beam_proxy = @import("beam_proxy.zig");
 const dom = @import("dom.zig");
+const sync = @import("sync.zig");
 
 const std = ct.std;
 const beam = ct.beam;
@@ -13,7 +14,7 @@ const gpa = ct.gpa;
 fn interrupt_handler(_: ?*qjs.JSRuntime, user_data: ?*anyopaque) callconv(.c) c_int {
     const pd: *ct.PoolData = @ptrCast(@alignCast(user_data));
     if (pd.deadline) |deadline| {
-        if (std.time.nanoTimestamp() > deadline) return 1;
+        if (sync.nowNanoseconds() > deadline) return 1;
     }
     return 0;
 }
@@ -213,7 +214,7 @@ fn handle_create_context(
 
     entry.rd = .{
         .mutex = .{},
-        .cond = .{},
+        .queue_event = .{},
         .queue_head = null,
         .queue_tail = null,
         .stopped = false,
@@ -233,7 +234,7 @@ fn handle_create_context(
         .pending_calls = std.AutoHashMap(u64, worker.PendingCall).init(gpa),
         .timers = std.AutoHashMap(u64, worker.TimerEntry).init(gpa),
         .addon_exports = std.StringHashMap(qjs.JSValue).init(gpa),
-        .start_time = std.time.nanoTimestamp(),
+        .start_time = sync.nowNanoseconds(),
         .max_reductions = p.max_reductions,
     };
 
@@ -300,7 +301,7 @@ fn handle_ctx_eval(
     const entry = entry_ptr.*;
 
     if (p.timeout_ns > 0) {
-        pd.deadline = std.time.nanoTimestamp() + @as(i128, p.timeout_ns);
+        pd.deadline = sync.nowNanoseconds() + @as(i128, p.timeout_ns);
     }
 
     // Pump resolve/reject messages from the pool queue into the context's rd queue
@@ -351,7 +352,7 @@ fn handle_ctx_call(
     const entry = entry_ptr.*;
 
     if (p.timeout_ns > 0) {
-        pd.deadline = std.time.nanoTimestamp() + @as(i128, p.timeout_ns);
+        pd.deadline = sync.nowNanoseconds() + @as(i128, p.timeout_ns);
     }
 
     install_pump(pd, contexts, p.context_id, entry);
