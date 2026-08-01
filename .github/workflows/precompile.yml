@@ -11,6 +11,9 @@ permissions:
 jobs:
   build:
     runs-on: ${{ matrix.os }}
+    env:
+      ZIG_LOCAL_CACHE_DIR: ${{ runner.temp }}/zig-local-cache
+      ZIG_GLOBAL_CACHE_DIR: ${{ runner.temp }}/zig-global-cache
     strategy:
       fail-fast: false
       matrix:
