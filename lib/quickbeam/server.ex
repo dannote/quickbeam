@@ -21,8 +21,52 @@ defmodule QuickBEAM.Server do
     {:noreply, state}
   end
 
+  @doc "Defines the shared global-value client API for runtime servers."
+  defmacro global_client_api do
+    quote do
+      @spec get_global(GenServer.server(), String.t()) :: {:ok, term()}
+      def get_global(server, name) when is_binary(name) do
+        GenServer.call(server, {:get_global, name}, :infinity)
+      end
+
+      @spec set_global(GenServer.server(), String.t(), term()) :: :ok
+      def set_global(server, name, value) when is_binary(name) do
+        GenServer.call(server, {:set_global, name, value}, :infinity)
+      end
+
+      @spec send_message(GenServer.server(), term()) :: :ok
+      def send_message(server, message) do
+        GenServer.cast(server, {:send_message, message})
+      end
+    end
+  end
+
+  @doc "Defines the shared DOM-query client API for runtime servers."
+  defmacro dom_client_api do
+    quote do
+      @spec dom_find(GenServer.server(), String.t()) :: {:ok, term() | nil}
+      def dom_find(server, selector),
+        do: GenServer.call(server, {:dom_find, selector}, :infinity)
+
+      @spec dom_find_all(GenServer.server(), String.t()) :: {:ok, list()}
+      def dom_find_all(server, selector),
+        do: GenServer.call(server, {:dom_find_all, selector}, :infinity)
+
+      @spec dom_text(GenServer.server(), String.t()) :: {:ok, String.t()}
+      def dom_text(server, selector),
+        do: GenServer.call(server, {:dom_text, selector}, :infinity)
+
+      @spec dom_html(GenServer.server()) :: {:ok, String.t()}
+      def dom_html(server), do: GenServer.call(server, :dom_html, :infinity)
+    end
+  end
+
   defmacro __using__(_opts) do
     quote do
+      require QuickBEAM.Server
+      QuickBEAM.Server.global_client_api()
+      QuickBEAM.Server.dom_client_api()
+
       @spec call(GenServer.server(), String.t(), list(), keyword()) ::
               QuickBEAM.js_result()
       def call(server, fn_name, args \\ [], opts \\ [])

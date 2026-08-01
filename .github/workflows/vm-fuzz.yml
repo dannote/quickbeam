@@ -11,6 +11,7 @@ jobs:
     timeout-minutes: 20
     env:
       MIX_ENV: test
+      QUICKBEAM_BUILD: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -19,6 +20,10 @@ jobs:
         with:
           otp-version: '27.3'
           elixir-version: '1.18'
+
+      - uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.16.0
 
       - name: Cache dependencies
         uses: actions/cache@v4

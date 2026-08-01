@@ -55,7 +55,7 @@ defmodule QuickBEAM.MixProject do
         "cmd zlint lib/quickbeam/*.zig lib/quickbeam/napi/*.zig",
         "cmd npx oxlint -c oxlint.json --type-aware --type-check priv/ts/",
         "cmd sh -c \"npx jscpd priv/ts/*.ts --min-tokens 50 --threshold 0\"",
-        "test --no-start --exclude napi_addon --exclude napi_sqlite"
+        "test --exclude napi_addon --exclude napi_sqlite"
       ],
       "fuzz.sanity": "cmd --cd fuzz zig build test"
     ]

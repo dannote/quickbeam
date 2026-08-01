@@ -2,7 +2,6 @@ const types = @import("types.zig");
 const worker = @import("worker.zig");
 const js = @import("js_helpers.zig");
 const sync = @import("sync.zig");
-const std = types.std;
 const qjs = types.qjs;
 
 pub fn install(ctx: *qjs.JSContext, global: qjs.JSValue) void {

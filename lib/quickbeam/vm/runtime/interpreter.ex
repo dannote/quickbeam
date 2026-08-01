@@ -32,7 +32,7 @@ defmodule QuickBEAM.VM.Runtime.Interpreter do
   alias QuickBEAM.VM.Runtime.Opcode.Value, as: ValueOpcodes
   alias QuickBEAM.VM.Runtime.Optimization
   alias QuickBEAM.VM.Runtime.Promise
-  alias QuickBEAM.VM.Runtime.Promise.Reaction
+  alias QuickBEAM.VM.Runtime.Promise.Reaction, as: PromiseReaction
   alias QuickBEAM.VM.Runtime.Promise.Reference, as: PromiseReference
   alias QuickBEAM.VM.Runtime.Property
   alias QuickBEAM.VM.Runtime.Reference
@@ -192,7 +192,7 @@ defmodule QuickBEAM.VM.Runtime.Interpreter do
     do: promise |> Async.assimilate_thenable(thenable, callable, execution) |> execute_async()
 
   @doc "Runs one queued Promise reaction against a source settlement."
-  def run_reaction(%Reaction{} = reaction, result, %State{} = execution),
+  def run_reaction(%PromiseReaction{} = reaction, result, %State{} = execution),
     do: reaction |> Async.run_reaction(result, execution) |> execute_async()
 
   @doc "Converts a raw machine result into the interpreter's public result."

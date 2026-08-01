@@ -92,41 +92,6 @@ defmodule QuickBEAM.Context do
     GenServer.stop(server)
   end
 
-  @spec get_global(GenServer.server(), String.t()) :: {:ok, term()}
-  def get_global(server, name) when is_binary(name) do
-    GenServer.call(server, {:get_global, name}, :infinity)
-  end
-
-  @spec set_global(GenServer.server(), String.t(), term()) :: :ok
-  def set_global(server, name, value) when is_binary(name) do
-    GenServer.call(server, {:set_global, name, value}, :infinity)
-  end
-
-  @spec send_message(GenServer.server(), term()) :: :ok
-  def send_message(server, message) do
-    GenServer.cast(server, {:send_message, message})
-  end
-
-  @spec dom_find(GenServer.server(), String.t()) :: {:ok, tuple() | nil}
-  def dom_find(server, selector) do
-    GenServer.call(server, {:dom_find, selector}, :infinity)
-  end
-
-  @spec dom_find_all(GenServer.server(), String.t()) :: {:ok, list()}
-  def dom_find_all(server, selector) do
-    GenServer.call(server, {:dom_find_all, selector}, :infinity)
-  end
-
-  @spec dom_text(GenServer.server(), String.t()) :: {:ok, String.t()}
-  def dom_text(server, selector) do
-    GenServer.call(server, {:dom_text, selector}, :infinity)
-  end
-
-  @spec dom_html(GenServer.server()) :: {:ok, String.t()}
-  def dom_html(server) do
-    GenServer.call(server, :dom_html, :infinity)
-  end
-
   @spec memory_usage(GenServer.server()) :: {:ok, map()}
   def memory_usage(server) do
     GenServer.call(server, :memory_usage, :infinity)

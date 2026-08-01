@@ -15,7 +15,7 @@ defmodule QuickBEAM.VM.Runtime.Async do
   alias QuickBEAM.VM.Runtime.Invocation
   alias QuickBEAM.VM.Runtime.Memory
   alias QuickBEAM.VM.Runtime.Promise
-  alias QuickBEAM.VM.Runtime.Promise.Reaction
+  alias QuickBEAM.VM.Runtime.Promise.Reaction, as: AsyncReaction
   alias QuickBEAM.VM.Runtime.Promise.Reference, as: PromiseReference
   alias QuickBEAM.VM.Runtime.State
   alias QuickBEAM.VM.Runtime.Thrown
@@ -161,8 +161,8 @@ defmodule QuickBEAM.VM.Runtime.Async do
   end
 
   @doc "Plans one FIFO Promise reaction or propagates a missing callback."
-  @spec run_reaction(Reaction.t(), {:ok, term()} | {:error, term()}, State.t()) :: result()
-  def run_reaction(%Reaction{} = reaction, result, %State{} = execution) do
+  @spec run_reaction(AsyncReaction.t(), {:ok, term()} | {:error, term()}, State.t()) :: result()
+  def run_reaction(%AsyncReaction{} = reaction, result, %State{} = execution) do
     callback =
       case result do
         {:ok, _value} -> reaction.on_fulfilled

@@ -2,9 +2,8 @@
 
 ## 0.11.0
 
-- Add `QuickBEAM.VM`, an isolated BEAM interpreter for verified QuickJS v26 bytecode with async/await, asynchronous `Beam.call` handlers, JavaScript errors, explicit resource limits, deterministic measurements, and bounded Test262 and SSR coverage. `QuickBEAM.VM.call/4` and `measure_call/4` initialize a fresh heap and invoke a named global with a shape matching the native call API.
+- Add `QuickBEAM.VM`, an isolated BEAM interpreter for verified QuickJS v26 bytecode with async/await, asynchronous `Beam.call` handlers, JavaScript errors, explicit resource limits, and deterministic measurements. `QuickBEAM.VM.call/4` and `measure_call/4` initialize a fresh heap and invoke a named global with a shape matching the native call API.
 - Add explicit immutable program pinning through `QuickBEAM.VM.pin/1` and `QuickBEAM.VM.unpin/1`, with fixed slots, single-flight admission, monitored evaluation leases, restart restoration, and decoded-residency limits.
-- Add an internal bounded BEAM compiler benchmark tier with fixed generated-module slots and explicit deoptimization. Compiler execution is not exposed through the public VM facade and remains release-quarantined.
 - Compact default object and array descriptors while preserving property ordering, reflection, and deterministic memory accounting.
 - Serialize native addon initialization and reject unsafe cross-runtime or post-reset reuse unless `allow_reinitialization: true` is explicitly selected.
 - Add x86-64 Windows native and precompiled NIF support for QuickJS, Lexbor, and WAMR.
@@ -14,7 +13,6 @@
 - Avoid false WAMR stack-overflow errors when BEAM scheduler threads share MinGW DLL TLS state.
 - Preserve the exact Unicode allocator callback signature required by Windows control-flow integrity.
 - Honor configured call deadlines while awaiting promises instead of using a fixed iteration limit.
-- Centralize native platform sources, flags, include paths, and libraries in a tested platform configuration.
 
 ## 0.10.20
 

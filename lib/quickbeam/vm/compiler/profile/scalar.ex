@@ -302,29 +302,16 @@ defmodule QuickBEAM.VM.Compiler.Profile.Scalar do
     charge_result = variable(:ChargeResult)
     action = variable(:Action)
 
-    charged_bindings = [
-      match_expression(
+    charged_bindings =
+      state_bindings(
+        charged_state,
         charged_lease,
-        remote_call(:erlang, :element, [integer(1), charged_state])
-      ),
-      match_expression(
         charged_frame,
-        remote_call(:erlang, :element, [integer(2), charged_state])
-      ),
-      match_expression(charged_args, remote_call(:erlang, :element, [integer(3), charged_state])),
-      match_expression(
+        charged_args,
         charged_locals,
-        remote_call(:erlang, :element, [integer(4), charged_state])
-      ),
-      match_expression(
-        list(charged_stack),
-        remote_call(:erlang, :element, [integer(5), charged_state])
-      ),
-      match_expression(
-        charged_execution,
-        remote_call(:erlang, :element, [integer(6), charged_state])
+        charged_stack,
+        charged_execution
       )
-    ]
 
     state = %{
       pc: pc,
@@ -519,20 +506,8 @@ defmodule QuickBEAM.VM.Compiler.Profile.Scalar do
     action = variable(:Action)
     compact = tuple([state.frame, integer(state.pc), state.args, state.locals, list(state.stack)])
 
-    charged_bindings = [
-      match_expression(lease, remote_call(:erlang, :element, [integer(1), continuation_state])),
-      match_expression(frame, remote_call(:erlang, :element, [integer(2), continuation_state])),
-      match_expression(args, remote_call(:erlang, :element, [integer(3), continuation_state])),
-      match_expression(locals, remote_call(:erlang, :element, [integer(4), continuation_state])),
-      match_expression(
-        list(stack),
-        remote_call(:erlang, :element, [integer(5), continuation_state])
-      ),
-      match_expression(
-        execution,
-        remote_call(:erlang, :element, [integer(6), continuation_state])
-      )
-    ]
+    charged_bindings =
+      state_bindings(continuation_state, lease, frame, args, locals, stack, execution)
 
     charged_state = %{
       state
@@ -552,6 +527,14 @@ defmodule QuickBEAM.VM.Compiler.Profile.Scalar do
       clause([tuple([atom(:ok), continuation_state])], [continuation.(charged_state)]),
       clause([action], [action])
     ])
+  end
+
+  defp state_bindings(state, lease, frame, args, locals, stack, execution) do
+    [lease, frame, args, locals, list(stack), execution]
+    |> Enum.with_index(1)
+    |> Enum.map(fn {value, index} ->
+      match_expression(value, remote_call(:erlang, :element, [integer(index), state]))
+    end)
   end
 
   defp property_operands(:get_field, [atom_operand], %{stack: [object | stack]} = state) do

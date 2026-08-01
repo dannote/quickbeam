@@ -147,34 +147,9 @@ defmodule QuickBEAM.Runtime do
     GenServer.call(server, :memory_usage, :infinity)
   end
 
-  @spec send_message(GenServer.server(), term()) :: :ok
-  def send_message(server, message) do
-    GenServer.cast(server, {:send_message, message})
-  end
-
-  @spec dom_find(GenServer.server(), String.t()) :: {:ok, term()} | {:ok, nil}
-  def dom_find(server, selector) do
-    GenServer.call(server, {:dom_find, selector}, :infinity)
-  end
-
-  @spec dom_find_all(GenServer.server(), String.t()) :: {:ok, list()}
-  def dom_find_all(server, selector) do
-    GenServer.call(server, {:dom_find_all, selector}, :infinity)
-  end
-
-  @spec dom_text(GenServer.server(), String.t()) :: {:ok, String.t()}
-  def dom_text(server, selector) do
-    GenServer.call(server, {:dom_text, selector}, :infinity)
-  end
-
   @spec dom_attr(GenServer.server(), String.t(), String.t()) :: {:ok, String.t() | nil}
   def dom_attr(server, selector, attr_name) do
     GenServer.call(server, {:dom_attr, selector, attr_name}, :infinity)
-  end
-
-  @spec dom_html(GenServer.server()) :: {:ok, String.t()}
-  def dom_html(server) do
-    GenServer.call(server, :dom_html, :infinity)
   end
 
   @browser_handlers %{

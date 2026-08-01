@@ -6,14 +6,15 @@ defmodule QuickBEAM.VM.Runtime.Promise do
   transforms that explicit state and never starts independent processes.
   """
 
-  alias QuickBEAM.VM.Runtime.Callable
-  alias QuickBEAM.VM.Runtime.Coroutine
-  alias QuickBEAM.VM.Runtime.Memory
-  alias QuickBEAM.VM.Runtime.Promise.Reaction
-  alias QuickBEAM.VM.Runtime.Promise.Reference, as: PromiseReference
-  alias QuickBEAM.VM.Runtime.Property
-  alias QuickBEAM.VM.Runtime.Reference
-  alias QuickBEAM.VM.Runtime.State
+  alias QuickBEAM.VM.Runtime, as: VMRuntime
+  alias VMRuntime.Callable
+  alias VMRuntime.Coroutine
+  alias VMRuntime.Memory
+  alias VMRuntime.Promise.Reaction
+  alias VMRuntime.Promise.Reference, as: PromiseReference
+  alias VMRuntime.Property
+  alias VMRuntime.Reference
+  alias VMRuntime.State
 
   @type state :: :pending | {:fulfilled, term()} | {:rejected, term()}
 

@@ -12,7 +12,7 @@ pub fn sleepNanoseconds(duration_ns: u64) void {
         .raw = .fromNanoseconds(@intCast(duration_ns)),
     };
 
-    duration.sleep(io) catch unreachable;
+    duration.sleep(io) catch @panic("clock sleep failed");
 }
 
 pub fn fillRandom(buffer: []u8) bool {

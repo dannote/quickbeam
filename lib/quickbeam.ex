@@ -381,7 +381,7 @@ defmodule QuickBEAM do
   """
   @spec get_global(runtime(), String.t()) :: js_result()
   def get_global(runtime, name) when is_binary(name) do
-    GenServer.call(runtime, {:get_global, name}, :infinity)
+    QuickBEAM.Runtime.get_global(runtime, name)
   end
 
   @doc """
@@ -399,7 +399,7 @@ defmodule QuickBEAM do
   """
   @spec set_global(runtime(), String.t(), term()) :: :ok
   def set_global(runtime, name, value) when is_binary(name) do
-    GenServer.call(runtime, {:set_global, name, value}, :infinity)
+    QuickBEAM.Runtime.set_global(runtime, name, value)
   end
 
   @doc """

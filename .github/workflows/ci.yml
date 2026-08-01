@@ -23,8 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        otp: ['27.3']
-        elixir: ['1.18']
+        otp: ['29.0']
+        elixir: ['1.20']
     env:
       MIX_ENV: test
       QUICKBEAM_BUILD: "1"
@@ -57,9 +57,8 @@ jobs:
       - run: npm install
       - name: CI
         run: |
-          mix ci 2>&1 | tee /tmp/ci.log; rc=$?
-          if [ $rc -ne 0 ] && grep -q "0 failures" /tmp/ci.log; then exit 0; fi
-          exit $rc
+          set -o pipefail
+          mix ci 2>&1 | tee /tmp/ci.log
 
       - name: Checkout pinned Test262 corpus
         run: |
@@ -106,9 +105,8 @@ jobs:
       - run: mix compile
       - name: Test
         run: |
-          mix test --no-start --exclude napi_addon --exclude napi_sqlite 2>&1 | tee /tmp/test_output.log; exit_code=$?
-          if grep -q "0 failures" /tmp/test_output.log; then exit 0; fi
-          exit $exit_code
+          set -o pipefail
+          mix test --exclude napi_addon --exclude napi_sqlite 2>&1 | tee /tmp/test_output.log
 
   asan:
     name: AddressSanitizer
