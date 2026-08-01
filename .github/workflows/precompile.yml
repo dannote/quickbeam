@@ -11,9 +11,6 @@ permissions:
 jobs:
   build:
     runs-on: ${{ matrix.os }}
-    env:
-      ZIG_LOCAL_CACHE_DIR: ${{ runner.temp }}/zig-local-cache
-      ZIG_GLOBAL_CACHE_DIR: ${{ runner.temp }}/zig-global-cache
     strategy:
       fail-fast: false
       matrix:
@@ -37,6 +34,9 @@ jobs:
 
       - name: Build NIF artifact
         shell: bash
+        env:
+          ZIG_LOCAL_CACHE_DIR: ${{ runner.temp }}/zig-local-cache
+          ZIG_GLOBAL_CACHE_DIR: ${{ runner.temp }}/zig-global-cache
         run: |
           mix local.hex --force
           mix local.rebar --force
