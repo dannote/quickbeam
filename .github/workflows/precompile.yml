@@ -41,6 +41,21 @@ jobs:
           mix local.hex --force
           mix local.rebar --force
           mix deps.get
+
+          # Zigler 0.16.0's Hex package omitted its Windows compatibility
+          # headers. Remove this pinned workaround after Zigler PR #596 ships.
+          if [ "${{ matrix.target }}" = "x86_64-windows-gnu" ]; then
+            header_dir="deps/zigler/priv/erl_nif_win"
+            header_url="https://raw.githubusercontent.com/E-xyza/zigler/b83bd59b9fec5543ae712c1838cfa7f526a882c4/priv/erl_nif_win"
+            mkdir -p "$header_dir"
+            curl --fail --silent --show-error --location \
+              "$header_url/erl_nif_win.h" -o "$header_dir/erl_nif_win.h"
+            curl --fail --silent --show-error --location \
+              "$header_url/erl_nif_api_funcs_win.h" -o "$header_dir/erl_nif_api_funcs_win.h"
+            echo "ee0162831e553eb559c1b884ce461b100a0ff792c401a66be9e6b5ad00883a77  $header_dir/erl_nif_win.h" | sha256sum -c -
+            echo "dd43c4dd22fb6a158af420754fb8cb6c255e069d87e1c294d09f3e9f897345ef  $header_dir/erl_nif_api_funcs_win.h" | sha256sum -c -
+          fi
+
           QUICKBEAM_BUILD=1 mix zigler_precompiled.build lib/quickbeam/native.ex \
             --target "${{ matrix.target }}" \
             --out artifacts
