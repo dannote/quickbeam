@@ -206,6 +206,7 @@ defmodule QuickBEAM.NapiTest do
       QuickBEAM.stop(rt)
     end
 
+    @tag :napi_addon
     test "serializes concurrent first initialization" do
       copy =
         Path.join(
@@ -246,6 +247,7 @@ defmodule QuickBEAM.NapiTest do
       assert Enum.all?(runtimes, fn runtime -> QuickBEAM.eval(runtime, "42") == {:ok, 42} end)
     end
 
+    @tag :napi_addon
     test "caches aliases locally and rejects implicit native reinitialization" do
       {:ok, rt} = QuickBEAM.start()
       {:ok, _} = reinitialize_addon(rt, @test_addon, as: "a")
