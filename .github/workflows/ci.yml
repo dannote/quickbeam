@@ -106,7 +106,7 @@ jobs:
       - name: Test
         run: |
           set -o pipefail
-          mix test --exclude napi_addon --exclude napi_sqlite 2>&1 | tee /tmp/test_output.log
+          mix test --exclude napi_addon --exclude napi_sqlite --max-cases 2 2>&1 | tee /tmp/test_output.log
 
   asan:
     name: AddressSanitizer
