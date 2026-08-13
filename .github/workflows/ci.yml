@@ -102,6 +102,7 @@ jobs:
 
       - run: mix deps.get
       - run: mix npm.get
+      - run: npm install
       - run: mix compile
       - name: Test
         run: |
